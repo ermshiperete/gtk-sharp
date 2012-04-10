@@ -19,14 +19,24 @@
  * Boston, MA 02111-1307, USA.
  */
 
+#include "config.h"
 
+#ifdef GLIB_NEW_API
+#include <glib.h>
+#else
 #include <glib/gthread.h>
+#endif
 
 gboolean glibsharp_g_thread_supported (void);
 
 gboolean
 glibsharp_g_thread_supported ()
 {
+#ifdef GLIB_NEW_API
+	// this mimicks what Ubuntu does in the C# glue code
+	return TRUE;
+#else
 	return g_thread_supported ();
+#endif
 }
 

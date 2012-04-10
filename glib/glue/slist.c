@@ -19,8 +19,13 @@
  * Boston, MA 02111-1307, USA.
  */
 
+#include "config.h"
 
+#ifdef GLIB_NEW_API
+#include <glib.h>
+#else
 #include <glib/gslist.h>
+#endif
 
 /* Forward declarations */
 gpointer gtksharp_slist_get_data (GSList *l);
