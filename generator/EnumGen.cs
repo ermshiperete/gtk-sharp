@@ -22,32 +22,38 @@
 namespace GtkSharp.Generation {
 
 	using System;
-	using System.Collections;
+	using System.Collections.Generic;
 	using System.IO;
 	using System.Xml;
+	using System.Text.RegularExpressions;
 
 	public class EnumGen : GenBase {
 		
 		string enum_type = String.Empty;
-		ArrayList members = new ArrayList ();
+		IList<string> members = new List<string> ();
 
-		public EnumGen (XmlElement ns, XmlElement elem) : base (ns, elem) 
+		public EnumGen (XmlElement ns, XmlElement elem) : base (ns, elem)
 		{
 			foreach (XmlElement member in elem.ChildNodes) {
 				if (member.Name != "member")
 					continue;
 
 				string result = "\t\t" + member.GetAttribute("name");
-				if (member.HasAttribute("value")) {
-					string value = member.GetAttribute("value");
-					if (value.EndsWith("U")) {
-						enum_type = " : uint";
-						value = value.TrimEnd('U');
+				if (member.HasAttribute ("value")) {
+					string value = member.GetAttribute ("value").Trim ();
+					foreach (Match match in Regex.Matches (value, "[0-9]+([UL]{1,2})", RegexOptions.IgnoreCase)) {
+						switch (match.Groups[1].Value.ToUpper ()) {
+							case "U": enum_type = " : uint"; break;
+							case "L": enum_type = " : long"; break;
+							case "UL": enum_type = " : ulong"; break;
+						}
 					}
 					result += " = " + value;
 				}
 				members.Add (result + ",");
 			}
+			if (elem.HasAttribute ("enum_type"))
+				enum_type = " : " + elem.GetAttribute ("enum_type");
 		}
 
 		public override bool Validate ()
@@ -79,7 +85,7 @@ namespace GtkSharp.Generation {
 		
 		public override void Generate (GenerationInfo gen_info)
 		{
-			StreamWriter sw = gen_info.OpenStream (Name);
+			StreamWriter sw = gen_info.OpenStream (Name, NS);
 
 			sw.WriteLine ("namespace " + NS + " {");
 			sw.WriteLine ();
@@ -106,7 +112,7 @@ namespace GtkSharp.Generation {
 			if (Elem.HasAttribute ("gtype")) {
 				sw.WriteLine ();
 				sw.WriteLine ("\tinternal class " + Name + "GType {");
-				sw.WriteLine ("\t\t[DllImport (\"" + LibraryName + "\")]");
+				sw.WriteLine ("\t\t[DllImport (\"" + LibraryName + "\", CallingConvention = CallingConvention.Cdecl)]");
 				sw.WriteLine ("\t\tstatic extern IntPtr " + Elem.GetAttribute ("gtype") + " ();");
 				sw.WriteLine ();
 				sw.WriteLine ("\t\tpublic static GLib.GType GType {");

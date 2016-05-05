@@ -26,7 +26,7 @@ namespace GLib {
 	using System.Runtime.InteropServices;
 	using System.Reflection;
 
-	public class ObjectManager {
+	public static class ObjectManager {
 
 		static BindingFlags flags = BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance | BindingFlags.CreateInstance;
 
@@ -44,7 +44,7 @@ namespace GLib {
 			try {
 				obj = Activator.CreateInstance (type, flags, null, new object[] {raw}, null) as GLib.Object;
 			} catch (MissingMethodException) {
-				throw new GLib.MissingIntPtrCtorException ("GLib.Object subclass " + type + " must provide a protected or public IntPtr ctor to support wrapping of native object handles.");
+				throw new GLib.MissingIntPtrCtorException ("Unable to construct instance of type " + type + " from native object handle. Instance of managed subclass may have been prematurely disposed.");
 			}
 			return obj;
 		}
@@ -69,7 +69,9 @@ namespace GLib {
 
 		static Type GetTypeOrParent (IntPtr obj)
 		{
-			IntPtr typeid = gtksharp_get_type_id (obj);
+			IntPtr typeid = GType.ValFromInstancePtr (obj);
+			if (typeid == GType.Invalid.Val)
+				return null;
 
 			Type result = GType.LookupType (typeid);
 			while (result == null) {
@@ -81,10 +83,7 @@ namespace GLib {
 			return result;
 		}
 
-		[DllImport("glibsharpglue-2")]
-		static extern IntPtr gtksharp_get_type_id (IntPtr raw);
-
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern IntPtr g_type_parent (IntPtr typ);
 	}
 }

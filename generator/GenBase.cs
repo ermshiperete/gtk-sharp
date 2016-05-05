@@ -49,13 +49,16 @@ namespace GtkSharp.Generation {
 			}
 		}
 
+		public int ParserVersion {
+			get {
+				XmlElement root = elem.OwnerDocument.DocumentElement;
+				return root.HasAttribute ("parser_version") ? int.Parse (root.GetAttribute ("parser_version")) : 1;
+			}
+		}
+
 		public bool IsInternal {
 			get {
-				if (elem.HasAttribute ("internal")) {
-					string attr = elem.GetAttribute ("internal");
-					return attr == "1" || attr == "true";
-				}
-				return false;
+				return elem.GetAttributeAsBoolean ("internal");
 			}
 		}
 
@@ -65,15 +68,9 @@ namespace GtkSharp.Generation {
 			}
 		}
 
-		public virtual string MarshalReturnType { 
-			get {
-				return MarshalType;
-			}
-		}
-
 		public abstract string MarshalType { get; }
 
-		public string Name {
+		public virtual string Name {
 			get {
 				return elem.GetAttribute ("name");
 			}
@@ -93,45 +90,9 @@ namespace GtkSharp.Generation {
 			}
 		}
 
-		public virtual string ToNativeReturnType { 
-			get {
-				return MarshalType;
-			}
-		}
-
-		protected void AppendCustom (StreamWriter sw, string custom_dir)
-		{
-			AppendCustom (sw, custom_dir, Name);
-		}
-
-		protected void AppendCustom (StreamWriter sw, string custom_dir, string type_name)
-		{
-			char sep = Path.DirectorySeparatorChar;
-			string custom = custom_dir + sep + type_name + ".custom";
-			if (File.Exists(custom)) {
-				sw.WriteLine ("#region Customized extensions");
-				sw.WriteLine ("#line 1 \"" + type_name + ".custom\"");
-				FileStream custstream = new FileStream(custom, FileMode.Open, FileAccess.Read);
-				StreamReader sr = new StreamReader(custstream);
-				sw.WriteLine (sr.ReadToEnd ());
-				sw.WriteLine ("#endregion");
-				sr.Close ();
-			}
-		}
-
 		public abstract string CallByName (string var);
 
 		public abstract string FromNative (string var);
-
-		public virtual string FromNativeReturn (string var)
-		{
-			return FromNative (var);
-		}
-
-		public virtual string ToNativeReturn (string var)
-		{
-			return CallByName (var);
-		}
 
 		public abstract bool Validate ();
 

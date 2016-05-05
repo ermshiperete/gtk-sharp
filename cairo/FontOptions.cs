@@ -33,11 +33,9 @@ namespace Cairo
 	public class FontOptions : IDisposable
 	{
 		IntPtr handle;
-		bool disposed;
 
-		public FontOptions ()
+		public FontOptions () : this (NativeMethods.cairo_font_options_create ())
 		{
-			handle = NativeMethods.cairo_font_options_create ();
 		}
 
 		~FontOptions ()
@@ -47,17 +45,24 @@ namespace Cairo
 
 		internal FontOptions (IntPtr handle)
 		{
+			if (handle == IntPtr.Zero)
+				throw new ArgumentException ("handle should not be NULL", "handle");
+
 			this.handle = handle;
+			if (CairoDebug.Enabled)
+				CairoDebug.OnAllocated (handle);
 		}
 
 		public FontOptions Copy ()
 		{
+			CheckDisposed ();
 			return new FontOptions (NativeMethods.cairo_font_options_copy (handle));
 		}
 
+		[Obsolete ("Use Dispose()")]
 		public void Destroy ()
 		{
-			NativeMethods.cairo_font_options_destroy (handle);
+			Dispose ();
 		}
 
 		public void Dispose ()
@@ -66,13 +71,22 @@ namespace Cairo
 			GC.SuppressFinalize (this);
 		}
 
-		private void Dispose (bool disposing)
+		protected virtual void Dispose (bool disposing)
 		{
-			if (!disposed) {
-				Destroy ();
-				handle = IntPtr.Zero;
-			}
-			disposed = true;
+			if (!disposing || CairoDebug.Enabled)
+				CairoDebug.OnDisposed<FontOptions> (handle, disposing);
+
+			if (handle == IntPtr.Zero)
+				return;
+
+			NativeMethods.cairo_font_options_destroy (handle);
+			handle = IntPtr.Zero;
+		}
+
+		void CheckDisposed ()
+		{
+			if (handle == IntPtr.Zero)
+				throw new ObjectDisposedException ("Object has already been disposed");
 		}
 
 		public static bool operator == (FontOptions options, FontOptions other)
@@ -108,31 +122,59 @@ namespace Cairo
 		{
 			if (other == null)
 				throw new ArgumentNullException ("other");
+			CheckDisposed ();
 			NativeMethods.cairo_font_options_merge (handle, other.Handle);
 		}
 
 		public Antialias Antialias {
-			get { return NativeMethods.cairo_font_options_get_antialias (handle); }
-			set { NativeMethods.cairo_font_options_set_antialias (handle, value); }
+			get {
+				CheckDisposed ();
+				return NativeMethods.cairo_font_options_get_antialias (handle);
+			}
+			set {
+				CheckDisposed ();
+				NativeMethods.cairo_font_options_set_antialias (handle, value);
+			}
 		}
 
 		public HintMetrics HintMetrics {
-			get { return NativeMethods.cairo_font_options_get_hint_metrics (handle);}
-			set { NativeMethods.cairo_font_options_set_hint_metrics (handle, value); }
+			get {
+				CheckDisposed ();
+				return NativeMethods.cairo_font_options_get_hint_metrics (handle);
+			}
+			set {
+				CheckDisposed ();
+				NativeMethods.cairo_font_options_set_hint_metrics (handle, value);
+			}
 		}
 
 		public HintStyle HintStyle {
-			get { return NativeMethods.cairo_font_options_get_hint_style (handle);}
-			set { NativeMethods.cairo_font_options_set_hint_style (handle, value); }
+			get {
+				CheckDisposed ();
+				return NativeMethods.cairo_font_options_get_hint_style (handle);
+			}
+			set {
+				CheckDisposed ();
+				NativeMethods.cairo_font_options_set_hint_style (handle, value);
+			}
 		}
 
 		public Status Status {
-			get { return NativeMethods.cairo_font_options_status (handle); }
+			get {
+				CheckDisposed ();
+				return NativeMethods.cairo_font_options_status (handle);
+			}
 		}
 
 		public SubpixelOrder SubpixelOrder {
-			get { return NativeMethods.cairo_font_options_get_subpixel_order (handle);}
-			set { NativeMethods.cairo_font_options_set_subpixel_order (handle, value); }
+			get {
+				CheckDisposed ();
+				return NativeMethods.cairo_font_options_get_subpixel_order (handle);
+			}
+			set {
+				CheckDisposed ();
+				NativeMethods.cairo_font_options_set_subpixel_order (handle, value);
+			}
 		}
 	}
 }

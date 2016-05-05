@@ -1,152 +1,123 @@
-SUBDIRS = . glue
-
-if ENABLE_MONO_CAIRO
-local_mono_cairo=$(top_builddir)/cairo/Mono.Cairo.dll
-else
-local_mono_cairo=
-endif
+SUBDIRS = . glue gui-thread-check
 
 pkg = gtk
 pkgconfigdir=$(libdir)/pkgconfig
-pkgconfig_DATA=gtk-sharp-2.0.pc
+pkgconfig_DATA=gtk-sharp-3.0.pc
 
 SYMBOLS = gtk-symbols.xml
-INCLUDE_API = $(srcdir)/../glib/glib-api.xml ../pango/pango-api.xml ../atk/atk-api.xml ../gdk/gdk-api.xml
+INCLUDE_API = $(top_srcdir)/glib/glib-api.xml $(top_srcdir)/cairo/cairo-api.xml $(top_builddir)/gio/gio-api.xml $(top_builddir)/pango/pango-api.xml $(top_builddir)/atk/atk-api.xml $(top_builddir)/gdk/gdk-api.xml
 METADATA = Gtk.metadata
-references = ../glib/glib-sharp.dll ../pango/pango-sharp.dll ../atk/atk-sharp.dll ../gdk/gdk-sharp.dll $(local_mono_cairo)
+references = $(top_builddir)/glib/glib-sharp.dll $(top_builddir)/cairo/cairo-sharp.dll $(top_builddir)/gio/gio-sharp.dll $(top_builddir)/pango/pango-sharp.dll $(top_builddir)/atk/atk-sharp.dll $(top_builddir)/gdk/gdk-sharp.dll
 glue_includes = gtk/gtk.h
 
 sources = 				\
+	Accel.cs			\
+	AccelKey.cs			\
+	Action.cs			\
 	ActionEntry.cs			\
+	ActionGroup.cs		\
+	Adjustment.cs			\
 	Application.cs			\
+	Bin.cs				\
 	BindingAttribute.cs		\
+	Builder.cs			\
+	Button.cs			\
+	Calendar.cs			\
+	CellAreaBox.cs			\
+	CellLayoutAdapter.cs		\
+	CellRenderer.cs		\
+	CellView.cs			\
+	CheckMenuItem.cs		\
 	ChildPropertyAttribute.cs	\
+	Clipboard.cs			\
+	ColorSelection.cs		\
+	ComboBox.cs			\
+	ComboBoxText.cs			\
+	Container.cs			\
+	Dialog.cs			\
+	Drag.cs			\
+	Entry.cs			\
+	EntryCompletion.cs		\
+	FileChooserDialog.cs		\
+	Frame.cs			\
+	Global.cs			\
+	HBox.cs			\
+	HScale.cs			\
+	ICellLayout.cs			\
+	IconFactory.cs		\
+	IconSet.cs			\
+	IconTheme.cs			\
+	IconView.cs			\
+	Image.cs			\
+	ImageMenuItem.cs		\
+	Init.cs			\
+	ITreeModel.cs			\
 	ITreeNode.cs			\
 	Key.cs				\
-	MoveFocusHandler.cs		\
+	Label.cs			\
+	ListStore.cs			\
+	Menu.cs			\
+	MenuItem.cs			\
+	MessageDialog.cs		\
 	NodeCellDataFunc.cs		\
 	NodeSelection.cs		\
 	NodeStore.cs			\
 	NodeView.cs			\
+	Notebook.cs			\
+	PaperSize.cs			\
+	Plug.cs			\
+	Printer.cs			\
+	RadioAction.cs		\
 	RadioActionEntry.cs		\
+	RadioButton.cs		\
+	RadioMenuItem.cs		\
+	RadioToolButton.cs		\
+	RecentManager.cs		\
 	RowsReorderedHandler.cs		\
+	ScrolledWindow.cs		\
+	SelectionData.cs		\
+	Settings.cs			\
+	SpinButton.cs			\
+	StatusIcon.cs			\
+	Stock.cs			\
+	StockItem.cs			\
 	StockManager.cs			\
-	TextBufferSerializeFunc.cs		\
-	GtkSharp.TextBufferSerializeFuncNative.cs \
+	Style.cs			\
+	StyleContext.cs			\
+	Target.cs			\
+	TargetEntry.cs		\
+	TargetList.cs			\
+	TextAttributes.cs		\
+	TextBuffer.cs			\
+	TextChildAnchor.cs		\
+	TextIter.cs			\
+	TextMark.cs			\
+	TextTag.cs			\
+	TextView.cs			\
 	ThreadNotify.cs			\
 	ToggleActionEntry.cs		\
-	Timeout.cs			\
 	TreeEnumerator.cs		\
-	TreeNodeAttribute.cs		\
+	TreeIter.cs			\
+	TreeMenu.cs			\
+	TreeModelAdapter.cs		\
+	TreeModelFilter.cs		\
+	TreeModelSort.cs		\
 	TreeNode.cs			\
-	TreeNodeValueAttribute.cs
+	TreeNodeAttribute.cs		\
+	TreeNodeValueAttribute.cs	\
+	TreePath.cs			\
+	TreeSelection.cs		\
+	TreeStore.cs			\
+	TreeView.cs			\
+	TreeViewColumn.cs		\
+	UIManager.cs			\
+	VBox.cs			\
+	Viewport.cs			\
+	VScale.cs			\
+	Widget.cs			\
+	Window.cs
 
-customs = 				\
-	AboutDialog.custom		\
-	Accel.custom			\
-	AccelKey.custom			\
-	Action.custom			\
-	ActionGroup.custom		\
-	Adjustment.custom		\
-	Bin.custom			\
-	Builder.custom			\
-	Button.custom			\
-	Calendar.custom			\
-	CellRenderer.custom		\
-	CellRendererAccel.custom	\
-	CellRendererCombo.custom	\
-	CellRendererPixbuf.custom	\
-	CellRendererProgress.custom	\
-	CellRendererSpin.custom		\
-	CellRendererText.custom		\
-	CellRendererToggle.custom	\
-	CellLayout.custom		\
-	CellLayoutAdapter.custom	\
-	CellView.custom			\
-	CheckMenuItem.custom		\
-	Clipboard.custom		\
-	ColorSelection.custom		\
-	ColorSelectionDialog.custom	\
-	Combo.custom			\
-	ComboBox.custom			\
-	ComboBoxEntry.custom		\
-	Container.custom		\
-	Dialog.custom			\
-	Drag.custom			\
-	Entry.custom			\
-	EntryCompletion.custom		\
-	FileChooser.custom		\
-	FileChooserButton.custom	\
-	FileChooserDialog.custom	\
-	FileChooserWidget.custom	\
-	FileSelection.custom		\
-	Frame.custom			\
-	HBox.custom			\
-	HScale.custom			\
-	IconFactory.custom		\
-	IconSet.custom			\
-	IconTheme.custom		\
-	IconView.custom			\
-	Image.custom			\
-	ImageMenuItem.custom		\
-	Init.custom			\
-	Input.custom			\
-	ItemFactory.custom		\
-	Label.custom			\
-	ListStore.custom		\
-	MessageDialog.custom		\
-	Menu.custom			\
-	MenuItem.custom			\
-	Notebook.custom			\
-	Object.custom			\
-	Plug.custom			\
-	PrintContext.custom		\
-	Printer.custom			\
-	RadioButton.custom		\
-	RadioMenuItem.custom		\
-	RadioToolButton.custom		\
-	ScrolledWindow.custom		\
-	SelectionData.custom		\
-	Settings.custom			\
-	SpinButton.custom		\
-	StatusIcon.custom		\
-	Stock.custom			\
-	StockItem.custom		\
-	Style.custom			\
-	Table.custom			\
-	TargetEntry.custom		\
-	TargetList.custom		\
-	TargetPair.custom		\
-	TextAttributes.custom		\
-	TextAppearance.custom		\
-	TextBuffer.custom		\
-	TextChildAnchor.custom		\
-	TextIter.custom			\
-	TextMark.custom			\
-	TextTag.custom			\
-	TextView.custom			\
-	Toolbar.custom			\
-	TooltipsData.custom		\
-	TreeIter.custom			\
-	TreeModel.custom		\
-	TreeModelAdapter.custom		\
-	TreeModelFilter.custom		\
-	TreeModelSort.custom		\
-	TreePath.custom			\
-	TreeSelection.custom		\
-	TreeSortable.custom		\
-	TreeSortableAdapter.custom	\
-	TreeStore.custom		\
-	TreeViewColumn.custom		\
-	TreeView.custom			\
-	UIManager.custom		\
-	VBox.custom			\
-	VScale.custom			\
-	Viewport.custom			\
-	Widget.custom			\
-	Window.custom
+add_dist = gtk-sharp-3.0.pc.in
 
-add_dist = gtk-sharp-2.0.pc.in
-
-include ../Makefile.include
+include $(top_srcdir)/Makefile.include
 

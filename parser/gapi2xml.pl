@@ -5,7 +5,7 @@
 # Author: Mike Kestner <mkestner@speakeasy.net>
 #
 # Copyright (c) 2001-2003 Mike Kestner
-# Copyright (c) 2003-2004 Novell, Inc.
+# Copyright (c) 2003-2009 Novell, Inc.
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of version 2 of the GNU General Public
@@ -22,6 +22,7 @@
 # Boston, MA 02111-1307, USA.
 ##############################################################
 
+$parser_version = 2;
 $debug=$ENV{'GAPI_DEBUG'};
 
 use XML::LibXML;
@@ -33,6 +34,10 @@ if (!$ARGV[2]) {
 $ns = $ARGV[0];
 $libname = $ARGV[2];
 
+# Used by name mangling sub
+%num2txt = ('1', "One", '2', "Two", '3', "Three", '4', "Four", '5', "Five",
+	    '6', "Six", '7', "Seven", '8', "Eight", '9', "Nine", '0', "Zero");
+
 ##############################################################
 # Check if the filename provided exists.  We parse existing files into
 # a tree and append the namespace to the root node.  If the file doesn't 
@@ -43,9 +48,13 @@ if (-e $ARGV[1]) {
 	#parse existing file and get root node.
 	$doc = XML::LibXML->new->parse_file($ARGV[1]);
 	$root = $doc->getDocumentElement();
+	if ($root->getAttribute ('parser_version') != $parser_version) {
+		die "The version of the file does not match the version of the parser";
+	}
 } else {
 	$doc = XML::LibXML::Document->new();
 	$root = $doc->createElement('api');
+	$root->setAttribute('parser_version', $parser_version);
 	$doc->setDocumentElement($root);
 	$warning_node = XML::LibXML::Comment->new ("\n\n        This file was automatically generated.\n        Please DO NOT MODIFY THIS FILE, modify .metadata files instead.\n\n");
 	$root->appendChild($warning_node);
@@ -101,8 +110,8 @@ while ($line = <STDIN>) {
 			next;
 		}
 		$edefs{$ename} = $edef;
-	} elsif ($line =~ /typedef\s+\w+\s*\**\s*\(\*\s*(\w+)\)\s*\(/) {
-		$fname = $1;
+	} elsif ($line =~ /typedef\s+(const\s+)?\w+\s*\**\s*\(\s*\*\s*(\w+)\s*\)\s*\(/) {
+		$fname = $2;
 		$fdef = "";
 		while ($line !~ /;/) {
 			$fdef .= $line;
@@ -122,7 +131,7 @@ while ($line = <STDIN>) {
 		$sdef =~ s!/\*[^<].*?(\*/|\n)!!g;
 		$sdef =~ s/\n\s*//g;
 		$sdefs{$sname} = $sdef if (!exists ($sdefs{$sname}));
-	} elsif ($line =~ /^(\w+)_(class|base)_init\b/) {
+	} elsif ($line =~ /^(\w+)_(class|base|default)_init\b/) {
 		$class = StudlyCaps($1);
 		$pedef = $line;
 		while ($line = <STDIN>) {
@@ -152,8 +161,17 @@ while ($line = <STDIN>) {
 			last if ($line =~ /^(deprecated)?}/);
 		}
 		$typefuncs{lc($class)} = $pedef;
-	} elsif ($line =~ /^G_DEFINE_TYPE_WITH_CODE\s*\(\s*(\w+)/) {
-		$typefuncs{lc($1)} = $line;
+	} elsif ($line =~ /^G_DEFINE_TYPE_(EXTENDED|WITH_CODE)\s*\(\s*(\w+)/) {
+		$typefuncs{lc($2)} = $line;
+	} elsif ($line =~ /^G_DEFINE_BOXED_TYPE\s*\(\s*(\w+)/) {
+		$boxdefs{$1} = $line;
+	} elsif ($line =~ /^G_DEFINE_INTERFACE\s*\(\s*(\w+)\s*,\s*(\w+)/) {
+		if (exists($get_types{"$2_get_type"})) {
+			$typedef = $get_types{"$2_get_type"};
+			if (!exists($ifaces{$typedef})) {
+				$ifaces{$typedef} = "$1Interface";
+			}
+		}
 	} elsif ($line =~ /^(deprecated)?(const|G_CONST_RETURN)?\s*(struct\s+)?\w+\s*\**(\s*(const|G_CONST_RETURN)\s*\**)?\s*(\w+)\s*\(/) {
 		$fname = $6;
 		$fdef = "";
@@ -200,12 +218,14 @@ while ($line = <STDIN>) {
 		$boxdefs{$1} = $line;
 	} elsif ($line =~ /^BUILTIN\s*\{\s*\"(\w+)\".*GTK_TYPE_(ENUM|FLAGS)/) {
 		# ignoring these for now.
-	} elsif ($line =~ /^(deprecated)?\#define/) {
+	} elsif ($line =~ /^(deprecated)?\#\s*define/) {
 		my $test_ns = uc ($ns);
-		if ($line =~ /^deprecated\#define\s+(\w+)\s+\"(.*)\"/) {
+		if ($line =~ /^deprecated\#\s*define\s+(\w+)\s+\"(.*)\"/) {
 			$defines{"deprecated$1"} = $2;
-		} elsif ($line =~ /\#define\s+(\w+)\s+\"(.*)\"/) {
+		} elsif ($line =~ /\#\s*define\s+(\w+)\s+\"(.*)\"/) {
 			$defines{$1} = $2;
+		} elsif ($line =~ /\#\s*define\s+(\w+)\s+\(?\s*(\w+_get_type)/) {
+			$get_types{$2} = $1;
 		}
 	} elsif ($line !~ /\/\*/) {
 		print $line;
@@ -296,7 +316,6 @@ foreach $cbname (sort(keys(%fpdefs))) {
 	}
 }
 
-
 ##############################################################
 # Parse the interfaces list.   
 ##############################################################
@@ -314,12 +333,23 @@ foreach $type (sort(keys(%ifaces))) {
 
 	$elem_table{lc($inst)} = $iface_el;
 
-	$classdef = $sdefs{$1} if ($ifacetype =~ /struct\s+(\w+)/);
-	if ($initfunc) {
-		parseInitFunc($iface_el, $initfunc, $classdef);
+	if ($ifacetype =~ /struct\s+(\w+)/) {
+		$classdef = $sdefs{$1};
 	} else {
-		warn "Don't have an init func for $inst.\n" if $debug;
-		addVirtualMethods ($classdef, $classdef, $iface_el);
+		$classdef = 0;
+	}
+
+	if ($classdef) {
+		my @signal_vms;
+		if ($initfunc) {
+			@signal_vms = parseInitFunc($iface_el, $initfunc, $classdef);
+		} else {
+			warn "Don't have an init func for $inst.\n" if $debug;
+			# my @signal_vms;
+		}
+		addClassElem ($iface_el, $classdef, @signal_vms);
+	} else {
+		$iface_el->setAttribute("consume_only", "1");
 	}
 }
 
@@ -371,14 +401,16 @@ foreach $type (sort(keys(%objects))) {
 
 	# Get the props from the class_init func.
 	if ($initfunc) {
-		parseInitFunc($obj_el, $initfunc, $classdef);
+		@signal_vms = parseInitFunc($obj_el, $initfunc, $classdef);
 	} else {
 		warn "Don't have an init func for $inst.\n" if $debug;
 	}
 
+	addClassElem ($obj_el, $classdef, @signal_vms) if ($classdef);
+
 	# Get the interfaces from the class_init func.
 	if ($typefunc) {
-		if ($typefunc =~ /G_DEFINE_TYPE_WITH_CODE/) {
+		if ($typefunc =~ /G_DEFINE_TYPE_(EXTENDED|WITH_CODE)/) {
 			parseTypeFuncMacro($obj_el, $typefunc);
 		} else {
 			parseTypeFunc($obj_el, $typefunc);
@@ -475,8 +507,7 @@ foreach $define (sort (keys (%defines))) {
 ##############################################################
 
 if ($ARGV[1]) {
-	open(XMLFILE, ">$ARGV[1]") || 
-				die "Couldn't open $ARGV[1] for writing.\n";
+	open(XMLFILE, ">$ARGV[1]") || die "Couldn't open $ARGV[1] for writing.\n";
 	print XMLFILE $doc->toString();
 	close(XMLFILE);
 } else {
@@ -492,6 +523,84 @@ print "structs: $scnt  enums: $ecnt  callbacks: $cbcnt\n";
 print "funcs: $fcnt types: $tcnt  classes: $classcnt\n";
 print "props: $propcnt childprops: $childpropcnt signals: $sigcnt\n\n";
 
+sub addClassElem
+{
+	my ($obj_el, $classdef, @signal_vms) = @_;
+
+	my %is_signal_vm;
+	for (@signal_vms) { 
+		$is_signal_vm{$_} = 1;
+	}
+
+	if ($classdef =~ /struct\s+_?(\w+)\s*{(.*)};/) {
+		my $elem = $doc->createElement('class_struct');
+		$elem->setAttribute('cname', $1);
+		$obj_el->insertBefore($elem, $obj_el->firstChild);
+		$fields = $2;
+		$fields =~ s!/\*.*?\*/!!g; # Remove comments
+		foreach $field (split (/;/, $fields)) {
+			if ($field =~ /\s*(G_CONST_RETURN\s+)?(\S+\s*\**)\s*\(\s*\*\s*(\w+)\s*\)\s*(\((.*?)\))?/) {
+				$ret = $1 . $2; $cname = $3; $parms = $5;
+
+				$class_elem = $doc->createElement('method');
+				$elem->appendChild($class_elem);
+
+				if ($is_signal_vm{$cname}) {
+					$class_elem->setAttribute('signal_vm', $cname);
+				} else {
+					$class_elem->setAttribute('vm', $cname);
+
+					$vm_elem = $doc->createElement('virtual_method');
+					$obj_el->appendChild($vm_elem);
+					$vm_elem->setAttribute('name', StudlyCaps($cname));
+					$vm_elem->setAttribute('cname', $cname);
+
+					addReturnElem($vm_elem, $ret);
+
+					if ($parms && ($parms ne "void")) { # if there are any parameters
+						@parm_arr = split(/,/, $parms);
+						$parms =~ /\s*(\w+)/; # Get type of first parameter
+						if ($1 ne $obj_el->getAttribute ('cname')) {
+							$vm_elem->setAttribute('shared', 'true'); # First parameter is not of the type of the declaring class -> static vm
+						} else {
+							($dump, @parm_arr) = @parm_arr;
+						}
+						addParamsElem($vm_elem, @parm_arr);
+					} else {
+						$vm_elem->setAttribute('shared', 'true');
+					}
+
+					if ($cname =~ /reserved_?[0-9]+$/ || $cname =~ /padding_?[0-9]+$/ || $cname =~ /recent_?[0-9]+$/) {
+						$vm_elem->setAttribute('padding', 'true');
+					}
+				}
+			} elsif ($field =~ /(unsigned\s+)?(const\s+)?(\S+)\s+(.+)/) {
+				my $unsigned = $1; $const = $2; $name = $3; $symb = $4;
+				$const =~ s/const\s+/const\-/g;
+				my $type = $unsigned . $const . $name;
+				
+				foreach $tok (split (/,\s*/, $symb)) { # multiple field defs may occur in one line; like int xrange, yrange;
+					$tok =~ /(\*)?(\w+)\s*(.*)/;
+					my $field_type = $type . $1; my $cname = $2; my $modifiers = $3;
+
+					$fld_elem = addNameElem($elem, 'field', $cname, "");
+					$fld_elem->setAttribute('type', "$field_type");
+
+					if ($modifiers =~ /\[(.*)\]/) {
+						$fld_elem->setAttribute('array_len', "$1");
+					} elsif ($modifiers =~ /\:\s*(\d+)/) {
+						$fld_elem->setAttribute('bits', "$1");
+					}
+				}
+			} elsif ($field =~ /\S+/) {
+				print "***** Unmatched class struct field $field\n";
+			}
+		}
+	} else {
+		print "***** Unmatched $classdef\n";
+	}
+}
+
 sub addFieldElems
 {
 	my ($parent, $defaultaccess, @fields) = @_;
@@ -503,6 +612,8 @@ sub addFieldElems
 			$field = $2;
 		}
 		next if ($field !~ /\S/);
+		$field =~ s/GSEAL\s*\((.*)\)/\1/g;
+		$field =~ s/\bvolatile\s+//g;
 		$field =~ s/\s+(\*+)/\1 /g;
 		$field =~ s/(const\s+)?(\w+)\*\s+const\*/const \2\*/g;
 		$field =~ s/(\w+)\s+const\s*\*/const \1\*/g;
@@ -794,6 +905,7 @@ sub addParamsElem
 		$parm =~ s/(\w+)\s+const\s*\*/const \1\*/g;
 		$parm =~ s/const\s+/const-/g;
 		$parm =~ s/unsigned\s+/unsigned-/g;
+		$parm =~ s/\bvolatile\s+//g;
 		if ($parm =~ /(.*)\(\s*\**\s*(\w+)\)\s+\((.*)\)/) {
 			my $ret = $1; my $cbn = $2; my $params = $3;
 			my $type = $parent->getAttribute('name') . StudlyCaps($cbn);
@@ -826,6 +938,9 @@ sub addParamsElem
 		}elsif ($parm =~ /(unsigned )?(\S+)\s+(\S+)/) {
 			$parm_elem->setAttribute('type', $1 . $2);
 			$name = $3;
+		} elsif ($parm =~ /(\w+\*)(\w+)/) {
+			$parm_elem->setAttribute('type', $1);
+			$name = $2;
 		} elsif ($parm =~ /(\S+)/) {
 			$parm_elem->setAttribute('type', $1);
 			$name = "arg" . $parm_num;
@@ -867,6 +982,53 @@ sub addPropElem
 	my @params = split(/,/, $2);
 
 	$name = $params[0];
+	if ($defines{$name}) {
+		$name = $defines{$name};
+	} else {
+		$name =~ s/\s*\"//g;
+	}
+
+	$mode = $params[$#params];
+
+	if ($type =~ /boolean|float|double|^u?int|pointer|unichar/) {
+		$type = "g$type";
+	} elsif ($type =~ /string/) {
+		$type = "gchar*";
+	} elsif ($type =~ /boxed|object/) {
+		$type = $params[$#params-1];
+		$type =~ s/TYPE_//;
+		$type =~ s/\s+//g;
+		$type = StudlyCaps(lc($type));
+	} elsif ($type =~ /enum|flags/) {
+		$type = $params[$#params-2];
+		$type =~ s/TYPE_//;
+		$type =~ s/\s+//g;
+		$type = StudlyCaps(lc($type));
+	}
+
+	$prop_elem = $doc->createElement($is_child ? "childprop" : "property");
+	$node->appendChild($prop_elem);
+	$prop_elem->setAttribute('name', StudlyCaps($name));
+	$prop_elem->setAttribute('cname', $name);
+	$prop_elem->setAttribute('type', $type);
+
+	$prop_elem->setAttribute('readable', "true") if ($mode =~ /READ/);
+	$prop_elem->setAttribute('writeable', "true") if ($mode =~ /WRIT/);
+	$prop_elem->setAttribute('construct', "true") if ($mode =~ /CONSTRUCT(?!_)/);
+	$prop_elem->setAttribute('construct-only', "true") if ($mode =~ /CONSTRUCT_ONLY/);
+}
+
+sub addPropElem2
+{
+	my ($spec, $node, $is_child) = @_;
+	my ($name, $mode, $docs);
+
+	$spec =~ /g_param_spec_(\w+)\s*\((.*)\s*\);/;
+	my $type = $1;
+	my @params = split(/,/, $2);
+
+	$name = $params[0];
+
 	if ($defines{$name}) {
 		$name = $defines{$name};
 	} else {
@@ -946,11 +1108,22 @@ sub addSignalElem
 	}
 	$sig_elem->setAttribute('when', $1) if ($spec =~ /_RUN_(\w+)/);
 
-	my $method = "";
 	$sig_elem->setAttribute('manual', 'true') if ($spec =~ /G_TYPE_POINTER/);
 	if ($spec =~ /_OFFSET\s*\(\w+,\s*(\w+)\)/) {
-		$method = $1;
-		$sig_elem->setAttribute('field_name', $1);
+		my $method = $1;
+		$sig_elem->setAttribute('field_name', $method);
+
+		if ($class =~ /;\s*(\/\*< (public|protected|private) >\s*\*\/)?(G_CONST_RETURN\s+)?(\w+\s*\**)\s*\(\s*\*\s*$method\s*\)\s*\((.*?)\);/) {
+			$ret = $4; $parms = $5;
+			addReturnElem($sig_elem, $ret);
+			if ($parms && ($parms ne "void")) {
+				my ($dump, @parm_arr) = split (/,/, $parms);
+				addParamsElem($sig_elem, @parm_arr);
+			}
+			return $method;
+	} else {
+			die "ERROR: Failed to parse method $method from class definition:\n$class";
+		}
 	} else {
 		@args = split(/,/, $spec);
 		my $rettype = parseTypeToken ($args[7]);
@@ -959,10 +1132,7 @@ sub addSignalElem
 		$parmcnt =~ s/.*(\d+).*/\1/;
 		$parms_elem = $doc->createElement('parameters');
 		$sig_elem->appendChild($parms_elem);
-		$parm_elem = $doc->createElement('parameter');
-		$parms_elem->appendChild($parm_elem);
-		$parm_elem->setAttribute('name', "inst");
-		$parm_elem->setAttribute('type', "$inst*");
+
 		for (my $idx = 0; $idx < $parmcnt; $idx++) {
 			my $argtype = parseTypeToken ($args[9+$idx]);
 			$parm_elem = $doc->createElement('parameter');
@@ -970,60 +1140,9 @@ sub addSignalElem
 			$parm_elem->setAttribute('name', "p$idx");
 			$parm_elem->setAttribute('type', $argtype);
 		}
-		return $class;
+		return "";
 	}
-
-	if ($class =~ /;\s*(\/\*< (public|protected|private) >\s*\*\/)?(G_CONST_RETURN\s+)?(\w+\s*\**)\s*\(\s*\*\s*$method\)\s*\((.*?)\);/) {
-		$ret = $4; $parms = $5;
-		addReturnElem($sig_elem, $ret);
-		if ($parms && ($parms ne "void")) {
-			addParamsElem($sig_elem, split(/,/, $parms));
 		}
-		$class =~ s/;\s*(\/\*< (public|protected|private) >\s*\*\/)?(G_CONST_RETURN\s+)?\w+\s*\**\s*\(\s*\*\s*$method\)\s*\(.*?\);/;/;
-	} else {
-		die "ERROR: Failed to parse method $method from class definition:\n$class";
-	}
-
-	return $class;
-}
-
-sub addVirtualMethods
-{
-	my ($class, $orig_class, $node) = @_;
-	$class =~ s/\n\s*//g;
-	$class =~ s/\/\*.*?\*\///g;
-
-	my $idx = 0;
-	my $ins_sibling = $node->firstChild;
-	while ($ins_sibling && ($ins_sibling->nodeName eq "field" || $ins_sibling->nodeName eq "property")) {
-		$ins_sibling = $ins_sibling->nextSibling ();
-	}
-	while ($class =~ /;\s*(G_CONST_RETURN\s+)?(\S+\s*\**)\s*\(\s*\*\s*(\w+)\)\s*\((.*?)\);/) {
-		$ret = $1 . $2; $cname = $3; $parms = $4;
-		$orig_class =~ /;\s*(G_CONST_RETURN\s+)?(\S+\s*\**)\s*\(\s*\*\s*(\w+)\)\s*\((.*?)\);/;
-		while ($ins_sibling && $3 ne $cname) {
-			$ins_sibling = $ins_sibling->nextSibling ();
-			$orig_class =~ s/;(.*?\));/;/;
-			$orig_class =~ /;\s*(G_CONST_RETURN\s+)?(\S+\s*\**)\s*\(\s*\*\s*(\w+)\)\s*\((.*?)\);/;
-		}
-		if ($cname !~ /reserved/) {
-			$vm_elem = $doc->createElement('virtual_method');
-			if ($ins_sibling) {
-				$node->insertBefore($vm_elem, $ins_sibling);
-			} else {
-				$node->appendChild($vm_elem);
-			}
-			$vm_elem->setAttribute('name', StudlyCaps($cname));
-			$vm_elem->setAttribute('cname', $cname);
-			addReturnElem($vm_elem, $ret);
-			if ($parms && ($parms ne "void")) {
-				addParamsElem($vm_elem, split(/,/, $parms));
-			}
-		}
-		$class =~ s/;\s*(G_CONST_RETURN\s+)?\S+\s*\**\s*\(\s*\*\s*\w+\)\s*\(.*?\);/;/;
-		$orig_class =~ s/;.*?\);/;/;
-	}
-}
 
 sub addImplementsElem
 {
@@ -1041,11 +1160,13 @@ sub addImplementsElem
 sub parseInitFunc
 {
 	my ($obj_el, $initfunc, $classdef) = @_;
-	my $orig_classdef = $classdef;
 
 	my @init_lines = split (/\n/, $initfunc);
+	my @signal_vms = ();
 
 	my $linenum = 0;
+	my $pspec = "";
+	my $pspec_use = 0;
 	while ($linenum < @init_lines) {
 
 		my $line = $init_lines[$linenum];
@@ -1054,10 +1175,18 @@ sub parseInitFunc
 			# FIXME: This ignores the bool helper macro thingie.
 		} elsif ($line =~ /g_object_(class|interface)_install_prop/) {
 			my $prop = $line;
+			$pspec_use = 1;
 			while ($prop !~ /\)\s*;/) {
 				$prop .= $init_lines[++$linenum];
+				if ($init_lines[$linenum] =~ /g_param_spec_/) {
+					$pspec_use = 0;
+				}
 			}
-			addPropElem ($prop, $obj_el, 0);
+			if ($pspec_use) {
+				addPropElem2 ($prop.$pspec, $obj_el, 0);
+			} else {
+				addPropElem ($prop, $obj_el, 0);
+			}
 			$propcnt++;
 		} elsif ($line =~ /gtk_container_class_install_child_property/) {
 			my $prop = $line;
@@ -1071,13 +1200,18 @@ sub parseInitFunc
 			do {
 				$sig .= $init_lines[++$linenum];
 			} until ($init_lines[$linenum] =~ /;/);
-			$classdef = addSignalElem ($sig, $classdef, $obj_el);
+			$signal_vm = addSignalElem ($sig, $classdef, $obj_el);
+			push (@signal_vms, $signal_vm) if $signal_vm;
 			$sigcnt++;
+		} elsif ($line =~ /g_param_spec_/) {
+			$pspec = $line;
+			do {
+				$pspec .= $init_lines[++$linenum];
+			} until ($init_lines[$linenum] =~ /\)\s*;/);
 		}
 		$linenum++;
 	}
-
-	addVirtualMethods ($classdef, $orig_classdef, $obj_el);
+	return @signal_vms;
 }
 
 sub parseTypeFuncMacro
@@ -1134,9 +1268,6 @@ sub parseTypeFunc
 ##############################################################
 # Converts a dash or underscore separated name to StudlyCaps.
 ##############################################################
-
-%num2txt = ('1', "One", '2', "Two", '3', "Three", '4', "Four", '5', "Five",
-	    '6', "Six", '7', "Seven", '8', "Eight", '9', "Nine", '0', "Zero");
 
 sub StudlyCaps
 {

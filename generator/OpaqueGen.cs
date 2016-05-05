@@ -37,20 +37,21 @@ namespace GtkSharp.Generation {
 
 		private bool DisableRawCtor {
 			get {
-				return Elem.HasAttribute ("disable_raw_ctor");
+				return Elem.GetAttributeAsBoolean ("disable_raw_ctor");
 			}
 		}
 
 		public override void Generate (GenerationInfo gen_info)
 		{
-			gen_info.CurrentType = Name;
+			gen_info.CurrentType = QualifiedName;
 
-			StreamWriter sw = gen_info.Writer = gen_info.OpenStream (Name);
+			StreamWriter sw = gen_info.Writer = gen_info.OpenStream (Name, NS);
 
 			sw.WriteLine ("namespace " + NS + " {");
 			sw.WriteLine ();
 			sw.WriteLine ("\tusing System;");
 			sw.WriteLine ("\tusing System.Collections;");
+			sw.WriteLine ("\tusing System.Collections.Generic;");
 			sw.WriteLine ("\tusing System.Runtime.InteropServices;");
 			sw.WriteLine ();
 
@@ -58,20 +59,28 @@ namespace GtkSharp.Generation {
 
 			SymbolTable table = SymbolTable.Table;
 
-			Method ref_, unref, dispose;
-			GetSpecialMethods (out ref_, out unref, out dispose);
+			Method ref_, unref, dispose, set_gvalue;
+			GetSpecialMethods (out ref_, out unref, out dispose, out set_gvalue);
 
 			if (IsDeprecated)
 				sw.WriteLine ("\t[Obsolete]");
-			sw.Write ("\t{0} class " + Name, IsInternal ? "internal" : "public");
+			sw.Write ("\t{0} partial {1}class " + Name, IsInternal ? "internal" : "public", IsAbstract ? "abstract " : String.Empty);
 			string cs_parent = table.GetCSType(Elem.GetAttribute("parent"));
 			if (cs_parent != "")
 				sw.Write (" : " + cs_parent);
 			else
 				sw.Write (" : GLib.Opaque");
+
+			foreach (string iface in managed_interfaces) {
+				if (Parent != null && Parent.Implements (iface))
+					continue;
+				sw.Write (", " + iface);
+			}
+
 			sw.WriteLine (" {");
 			sw.WriteLine ();
-            
+
+			GenConstants (gen_info);
 			GenFields (gen_info);
 			GenMethods (gen_info, null, null);
 			GenCtors (gen_info);
@@ -114,7 +123,7 @@ namespace GtkSharp.Generation {
 					sw.WriteLine ("\t\t[Obsolete(\"" + QualifiedName + " is now refcounted automatically\")]");
 					sw.WriteLine ("\t\tpublic void Unref () {}");
 					sw.WriteLine ();
-				}	
+				}
 				finalizer_needed = true;
 			}
 
@@ -130,7 +139,7 @@ namespace GtkSharp.Generation {
 					sw.WriteLine ("\t\t[Obsolete(\"" + QualifiedName + " is now freed automatically\")]");
 					sw.WriteLine ("\t\tpublic void " + dispose.Name + " () {}");
 					sw.WriteLine ();
-				}	
+				}
 				finalizer_needed = true;
 			}
 
@@ -175,9 +184,18 @@ namespace GtkSharp.Generation {
 				sw.WriteLine ();
 			}
 #endif
+			if (set_gvalue != null) {
+				sw.WriteLine ("\t\t[DllImport(\"{0}\", CallingConvention = CallingConvention.Cdecl)]", LibraryName);
+				sw.WriteLine ("\t\tstatic extern void {0}(ref GLib.Value val, IntPtr obj);", set_gvalue.CName);
+				sw.WriteLine ();
+				sw.WriteLine ("\t\tpublic void SetGValue (ref GLib.Value val)");
+				sw.WriteLine ("\t\t{");
+				sw.WriteLine ("\t\t\t{0} (ref val, Handle);", set_gvalue.CName);
+				sw.WriteLine ("\t\t}");
+				sw.WriteLine ();
+			}
+
 			sw.WriteLine ("#endregion");
-			
-			AppendCustom(sw, gen_info.CustomDir);
 
 			sw.WriteLine ("\t}");
 			sw.WriteLine ("}");
@@ -187,7 +205,7 @@ namespace GtkSharp.Generation {
 			Statistics.OpaqueCount++;
 		}
 
-		void GetSpecialMethods (out Method ref_, out Method unref, out Method dispose)
+		void GetSpecialMethods (out Method ref_, out Method unref, out Method dispose, out Method set_gvalue)
 		{
 			ref_ = CheckSpecialMethod (GetMethod ("Ref"));
 			unref = CheckSpecialMethod (GetMethod ("Unref"));
@@ -199,6 +217,9 @@ namespace GtkSharp.Generation {
 					dispose = GetMethod ("Dispose");
 			}
 			dispose = CheckSpecialMethod (dispose);
+
+			set_gvalue = GetMethod ("SetGValue");
+			Methods.Remove ("SetGValue");
 		}
 
 		Method CheckSpecialMethod (Method method)
@@ -211,7 +232,7 @@ namespace GtkSharp.Generation {
 			if (method.Signature.ToString () != "")
 				return null;
 
-			methods.Remove (method.Name);
+			Methods.Remove (method.Name);
 			return method;
 		}
 

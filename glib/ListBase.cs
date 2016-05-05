@@ -35,8 +35,6 @@ namespace GLib {
 		protected System.Type element_type = null;
 
 		abstract internal IntPtr NthData (uint index);
-		abstract internal IntPtr GetData (IntPtr current);
-		abstract internal IntPtr Next (IntPtr current);
 		abstract internal int Length (IntPtr list);
 		abstract internal void Free (IntPtr list);
 		abstract internal IntPtr Append (IntPtr current, IntPtr raw);
@@ -170,7 +168,7 @@ namespace GLib {
 				else if (element_type.IsValueType)
 					ret = Marshal.PtrToStructure (data, element_type);
 				else if (element_type.IsInterface) {
-					Type adapter_type = element_type.Assembly.GetType (element_type.FullName + "Adapter");
+					Type adapter_type = element_type.Assembly.GetType (InterfaceToAdapterTypeName (element_type));
 					System.Reflection.MethodInfo method = adapter_type.GetMethod ("GetObject", new Type[] {typeof(IntPtr), typeof(bool)});
 					ret = method.Invoke (null, new object[] {data, false});
 				} else
@@ -182,25 +180,47 @@ namespace GLib {
 			return ret;
 		}
 
-		[DllImport ("libglib-2.0-0.dll")]
-		static extern void g_free (IntPtr item);
+		static string InterfaceToAdapterTypeName (Type type)
+		{
+			string fullname = type.Namespace;
+			if (!String.IsNullOrEmpty (fullname)) {
+				fullname += ".";
+			}
+			fullname += type.Name.Substring (1); // IActivatable -> Activatable
+			return fullname + "Adapter";
+		}
 
-		[DllImport ("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void g_object_unref (IntPtr item);
 
 		public void Empty ()
 		{
-			if (elements_owned)
-				for (uint i = 0; i < Count; i++)
-					if (typeof (GLib.Object).IsAssignableFrom (element_type))
-						g_object_unref (NthData (i));
-					else if (typeof (GLib.Opaque).IsAssignableFrom (element_type))
+			if (elements_owned) {
+				for (uint i = 0; i < Count; i++) {
+					if (typeof (GLib.Opaque).IsAssignableFrom (element_type)) {
 						GLib.Opaque.GetOpaque (NthData (i), element_type, true).Dispose ();
-					else 
-						g_free (NthData (i));
+					} else if (typeof (GLib.IWrapper).IsAssignableFrom (element_type)) {
+						g_object_unref (NthData (i));
+					} else {
+						Marshaller.Free (NthData (i));
+					}
+				}
+			}
 
 			if (managed)
 				FreeList ();
+		}
+
+		IntPtr GetData (IntPtr current)
+		{
+			// data field is at offset 0 for GList and GSList
+			return Marshal.ReadIntPtr (current);
+		}
+
+		IntPtr Next (IntPtr current)
+		{
+			// next field follows gpointer data field for GList and GSList
+			return Marshal.ReadIntPtr (current, IntPtr.Size);
 		}
 
 		private class ListEnumerator : IEnumerator

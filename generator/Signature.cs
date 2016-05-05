@@ -22,14 +22,14 @@
 namespace GtkSharp.Generation {
 
 	using System;
-	using System.Collections;
+	using System.Collections.Generic;
 	using System.Xml;
 
 	public class Signature  {
 		
-		private ArrayList parms = new ArrayList ();
+		private IList<Parameter> parms = new List<Parameter> ();
 
-		public Signature (Parameters parms) 
+		public Signature (Parameters parms)
 		{
 			foreach (Parameter p in parms) {
 				if (!parms.IsHidden (p))
@@ -84,7 +84,7 @@ namespace GtkSharp.Generation {
 
 		public string AccessorType {
 			get {
-				foreach (Parameter p in parms) 
+				foreach (Parameter p in parms)
 					if (p.PassAs == "out")
 						return p.CSType;
 				
@@ -94,7 +94,7 @@ namespace GtkSharp.Generation {
 
 		public string AccessorName {
 			get {
-				foreach (Parameter p in parms) 
+				foreach (Parameter p in parms)
 					if (p.PassAs == "out")
 						return p.Name;
 				
@@ -117,6 +117,48 @@ namespace GtkSharp.Generation {
 				
 				return String.Join (", ", result);
 			}
+		}
+
+		public string WithoutOptional ()
+		{
+			if (parms.Count == 0)
+				return String.Empty;
+
+			var result = new string [parms.Count];
+			int i = 0;
+
+			foreach (Parameter p in parms) {
+				if (p.IsOptional && p.PassAs == String.Empty)
+					continue;
+				result [i] = p.PassAs != String.Empty ? p.PassAs + " " : String.Empty;
+				result [i++] += p.CSType + " " + p.Name;
+			}
+
+			return String.Join (", ", result, 0, i);
+		}
+
+		public string CallWithoutOptionals ()
+		{
+			if (parms.Count == 0)
+				return String.Empty;
+
+			var result = new string [parms.Count];
+			int i = 0;
+
+			foreach (Parameter p in parms) {
+
+				result [i] = p.PassAs != "" ? p.PassAs + " " : "";
+				if (p.IsOptional && p.PassAs == String.Empty) {
+					if (p.IsArray)
+						result [i++] += "null";
+					else
+						result [i++] += p.Generatable.DefaultValue;
+				}
+				else
+					result [i++] += p.Name;
+			}
+
+			return String.Join (", ", result);
 		}
 	}
 }

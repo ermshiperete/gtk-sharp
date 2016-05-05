@@ -1,10 +1,10 @@
 // Gdk.Event.cs - Custom event wrapper 
 //
 // Authors: Rachel Hestilow <hestilow@ximian.com> 
-//          Mike Kestner <mkestner@ximian.com>
+//          Mike Kestner <mkestner@novell.com>
 //
 // Copyright (c) 2002 Rachel Hestilow
-// Copyright (c) 2004 Novell, Inc.
+// Copyright (c) 2004-2009 Novell, Inc.
 //
 // This program is free software; you can redistribute it and/or
 // modify it under the terms of version 2 of the Lesser GNU General 
@@ -28,18 +28,6 @@ namespace Gdk {
 
 	public class Event : GLib.IWrapper {
 
-		[DllImport("gdksharpglue-2")]
-		static extern EventType gtksharp_gdk_event_get_event_type (IntPtr evt);
-
-		[DllImport("gdksharpglue-2")]
-		static extern IntPtr gtksharp_gdk_event_get_window (IntPtr evt);
-
-		[DllImport("gdksharpglue-2")]
-		static extern sbyte gtksharp_gdk_event_get_send_event (IntPtr evt);
-
-		[DllImport("libgdk-win32-2.0-0.dll")]
-		static extern IntPtr gdk_event_get_type ();
-
 		IntPtr raw;
 
 		public Event(IntPtr raw) 
@@ -48,32 +36,51 @@ namespace Gdk {
 		}
 
 		public IntPtr Handle {
-			get {
-				return raw;
-			}
+			get { return raw; }
 		}
 
+		[DllImport (Global.GdkNativeDll, CallingConvention = CallingConvention.Cdecl)]
+		static extern IntPtr gdk_event_get_type ();
+
 		public static GLib.GType GType {
-			get {
-				return new GLib.GType (gdk_event_get_type ());
-			}
+			get { return new GLib.GType (gdk_event_get_type ()); }
+		}
+
+		[StructLayout (LayoutKind.Sequential)]
+		struct NativeStruct {
+			public EventType type;
+			public IntPtr window;
+			public sbyte send_event;
+		}
+
+		NativeStruct Native {
+			get { return (NativeStruct) Marshal.PtrToStructure (raw, typeof(NativeStruct)); }
 		}
 
 		public EventType Type {
-			get {
-				return gtksharp_gdk_event_get_event_type (Handle);
+			get { return Native.type; }
+			set {
+				NativeStruct native = Native;
+				native.type = value;
+				Marshal.StructureToPtr (native, raw, false);
 			}
 		}
 
 		public Window Window {
-			get {
-				return GLib.Object.GetObject (gtksharp_gdk_event_get_window (Handle)) as Window;
+			get { return GLib.Object.GetObject (Native.window, false) as Window; }
+			set {
+				NativeStruct native = Native;
+				native.window = value == null ? IntPtr.Zero : value.Handle;
+				Marshal.StructureToPtr (native, raw, false);
 			}
 		}
 
 		public bool SendEvent {
-			get {
-				return gtksharp_gdk_event_get_send_event (Handle) == 0 ? false : true;
+			get { return Native.send_event != 0; }
+			set {
+				NativeStruct native = Native;
+				native.send_event = (sbyte) (value ? 1 : 0);
+				Marshal.StructureToPtr (native, raw, false);
 			}
 		}
 
@@ -87,7 +94,8 @@ namespace Gdk {
 			if (raw == IntPtr.Zero)
 				return null;
 
-			switch (gtksharp_gdk_event_get_event_type (raw)) {
+			NativeStruct native = (NativeStruct) Marshal.PtrToStructure (raw, typeof(NativeStruct));
+			switch (native.type) {
 			case EventType.Expose:
 				return new EventExpose (raw);
 			case EventType.MotionNotify:
@@ -123,8 +131,6 @@ namespace Gdk {
 			case EventType.DropStart:
 			case EventType.DropFinished:
 				return new EventDND (raw);
-			case EventType.ClientEvent:
-				return new EventClient (raw);
 			case EventType.VisibilityNotify:
 				return new EventVisibility (raw);
 			case EventType.Scroll:
@@ -133,17 +139,12 @@ namespace Gdk {
 				return new EventWindowState (raw);
 			case EventType.Setting:
 				return new EventSetting (raw);
-#if GTK_SHARP_2_6
 			case EventType.OwnerChange:
 				return new EventOwnerChange (raw);
-#endif
-#if GTK_SHARP_2_8
 			case EventType.GrabBroken:
 				return new EventGrabBroken (raw);
-#endif
 			case EventType.Map:
 			case EventType.Unmap:
-			case EventType.NoExpose:
 			case EventType.Delete:
 			case EventType.Destroy:
 			default:

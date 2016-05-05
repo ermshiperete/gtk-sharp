@@ -23,13 +23,14 @@
 
 namespace GLib {
 	using System;
+	using System.Collections.Generic;
 	using System.Runtime.InteropServices;
 	
 	public class Marshaller {
 
 		private Marshaller () {}
 		
-		[DllImport("libglib-2.0-0.dll")]
+		[DllImport (Global.GLibNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void g_free (IntPtr mem);
 
 		public static void Free (IntPtr ptr)
@@ -46,10 +47,10 @@ namespace GLib {
 				g_free (ptrs [i]);
 		}
 
-		[DllImport("libglib-2.0-0.dll")]
+		[DllImport (Global.GLibNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern IntPtr g_filename_to_utf8 (IntPtr mem, int len, IntPtr read, out IntPtr written, out IntPtr error);
 
-		[DllImport("libglib-2.0-0.dll")]
+		[DllImport (Global.GLibNativeDll)]
 		static extern IntPtr g_filename_to_utf8_utf8 (IntPtr mem, int len, IntPtr read, out IntPtr written, out IntPtr error);
 
 		public static string FilenamePtrToString (IntPtr ptr) 
@@ -76,15 +77,23 @@ namespace GLib {
 			return ret;
 		}
 
-		[DllImport("glibsharpglue-2")]
-		static extern UIntPtr glibsharp_strlen (IntPtr mem);
+		static unsafe ulong strlen (IntPtr s)
+		{
+			ulong cnt = 0;
+			byte *b = (byte *)s;
+			while (*b != 0) {
+				b++;
+				cnt++;
+			}
+			return cnt;
+		}
 
 		public static string Utf8PtrToString (IntPtr ptr) 
 		{
 			if (ptr == IntPtr.Zero)
 				return null;
 
-			int len = (int) (uint)glibsharp_strlen (ptr);
+			int len = (int) (uint) strlen (ptr);
 			byte[] bytes = new byte [len];
 			Marshal.Copy (ptr, bytes, 0, len);
 			return System.Text.Encoding.UTF8.GetString (bytes);
@@ -115,10 +124,10 @@ namespace GLib {
 			return ret;
 		}
 
-		[DllImport("libglib-2.0-0.dll")]
+		[DllImport (Global.GLibNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern IntPtr g_filename_from_utf8 (IntPtr mem, int len, IntPtr read, out IntPtr written, out IntPtr error);
 
-		[DllImport("libglib-2.0-0.dll")]
+		[DllImport (Global.GLibNativeDll)]
 		static extern IntPtr g_filename_from_utf8_utf8 (IntPtr mem, int len, IntPtr read, out IntPtr written, out IntPtr error);
 
 		public static IntPtr StringToFilenamePtr (string str) 
@@ -161,6 +170,19 @@ namespace GLib {
 				return ret.Replace ("%", "%%");
 		}
 
+		public static IntPtr StringArrayToStrvPtr (string[] strs)
+		{
+			IntPtr[] ptrs = StringArrayToNullTermPointer (strs);
+			IntPtr ret = g_malloc (new UIntPtr ((ulong) (ptrs.Length * IntPtr.Size)));
+			Marshal.Copy (ptrs, 0, ret, ptrs.Length);
+			return ret;
+		}
+
+		public static IntPtr StringArrayToNullTermStrvPointer (string[] strs)
+		{
+			return StringArrayToStrvPtr (strs);
+		}
+
 		public static IntPtr[] StringArrayToNullTermPointer (string[] strs)
 		{
 			if (strs == null)
@@ -172,7 +194,7 @@ namespace GLib {
 			return result;
 		}
 
-		[DllImport("libglib-2.0-0.dll")]
+		[DllImport (Global.GLibNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void g_strfreev (IntPtr mem);
 
 		public static void StrFreeV (IntPtr null_term_array)
@@ -186,7 +208,7 @@ namespace GLib {
 				return new string [0];
 
 			int count = 0;
-			System.Collections.ArrayList result = new System.Collections.ArrayList ();
+			var result = new List<string> ();
 			IntPtr s = Marshal.ReadIntPtr (null_term_array, count++ * IntPtr.Size);
 			while (s != IntPtr.Zero) {
 				result.Add (Utf8PtrToString (s));
@@ -196,7 +218,7 @@ namespace GLib {
 			if (owned)
 				g_strfreev (null_term_array);
 
-			return (string[]) result.ToArray (typeof(string));
+			return result.ToArray ();
 		}
 
 		public static string[] PtrToStringArrayGFree (IntPtr string_array)
@@ -211,22 +233,13 @@ namespace GLib {
 			string[] members = new string[count];
 			for (int i = 0; i < count; ++i) {
 				IntPtr s = Marshal.ReadIntPtr (string_array, i * IntPtr.Size);
-				members[i] = GLib.Marshaller.PtrToStringGFree (s);
+				members[i] = PtrToStringGFree (s);
 			}
-			GLib.Marshaller.Free (string_array);
+			Free (string_array);
 			return members;
 		}
 
-		// Argv marshalling -- unpleasantly complex, but
-		// don't know of a better way to do it.
-		//
-		// Currently, the 64-bit cleanliness is
-		// hypothetical. It's also ugly, but I don't know of a
-		// construct to handle both 32 and 64 bitness
-		// transparently, since we need to alloc buffers of
-		// [native pointer size] * [count] bytes.
-
-		[DllImport("libglib-2.0-0.dll")]
+		[DllImport (Global.GLibNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern IntPtr g_malloc(UIntPtr size);
 
 		public static IntPtr Malloc (ulong size)
@@ -234,133 +247,57 @@ namespace GLib {
 			return g_malloc (new UIntPtr (size));
 		}
 
-		static bool check_sixtyfour () {
-			int szint = Marshal.SizeOf (typeof (int));
-			int szlong = Marshal.SizeOf (typeof (long));
-			int szptr = IntPtr.Size;
+		static System.DateTime local_epoch = new System.DateTime (1970, 1, 1, 0, 0, 0);
+		static int utc_offset = (int) (System.TimeZone.CurrentTimeZone.GetUtcOffset (System.DateTime.Now)).TotalSeconds;
 
-			if (szptr == szint)
-				return false;
-			if (szptr == szlong)
-				return true;
-
-			throw new Exception ("Pointers are neither int- nor long-sized???");
-		}
-
-		static IntPtr make_buf_32 (string[] args) 
-		{
-			int[] ptrs = new int[args.Length];
-
-			for (int i = 0; i < args.Length; i++)
-				ptrs[i] = (int) Marshal.StringToHGlobalAuto (args[i]);
-
-			IntPtr buf = g_malloc (new UIntPtr ((ulong) Marshal.SizeOf(typeof(int)) * 
-					       (ulong) args.Length));
-			Marshal.Copy (ptrs, 0, buf, ptrs.Length);
-			return buf;
-		}
-
-		static IntPtr make_buf_64 (string[] args) 
-		{
-			long[] ptrs = new long[args.Length];
-
-			for (int i = 0; i < args.Length; i++)
-				ptrs[i] = (long) Marshal.StringToHGlobalAuto (args[i]);
-				
-			IntPtr buf = g_malloc (new UIntPtr ((ulong) Marshal.SizeOf(typeof(long)) * 
-					       (ulong) args.Length));
-			Marshal.Copy (ptrs, 0, buf, ptrs.Length);
-			return buf;
-		}
-
-		[Obsolete ("Use GLib.Argv instead to avoid leaks.")]
-		public static IntPtr ArgvToArrayPtr (string[] args)
-		{
-			if (args.Length == 0)
-				return IntPtr.Zero;
-
-			if (check_sixtyfour ())
-				return make_buf_64 (args);
-
-			return make_buf_32 (args);
-		}
-
-		// should we be freeing these pointers? they're marshalled
-		// from our own strings, so I think not ...
-
-		static string[] unmarshal_32 (IntPtr buf, int argc)
-		{
-			int[] ptrs = new int[argc];
-			string[] args = new string[argc];
-
-			Marshal.Copy (buf, ptrs, 0, argc);
-
-			for (int i = 0; i < ptrs.Length; i++)
-				args[i] = Marshal.PtrToStringAuto ((IntPtr) ptrs[i]);
-			
-			return args;
-		}
-
-		static string[] unmarshal_64 (IntPtr buf, int argc)
-		{
-			long[] ptrs = new long[argc];
-			string[] args = new string[argc];
-
-			Marshal.Copy (buf, ptrs, 0, argc);
-
-			for (int i = 0; i < ptrs.Length; i++)
-				args[i] = Marshal.PtrToStringAuto ((IntPtr) ptrs[i]);
-			
-			return args;
-		}		
-
-		[Obsolete ("Use GLib.Argv instead to avoid leaks.")]
-		public static string[] ArrayPtrToArgv (IntPtr array, int argc)
-		{
-			if (argc == 0)
-				return new string[0];
-
-			if (check_sixtyfour ())
-				return unmarshal_64 (array, argc);
-
-			return unmarshal_32 (array, argc);
-		}
-
-		static DateTime local_epoch = new DateTime (1970, 1, 1, 0, 0, 0);
-		static int utc_offset = (int) (TimeZone.CurrentTimeZone.GetUtcOffset (DateTime.Now)).TotalSeconds;
-
-		public static IntPtr DateTimeTotime_t (DateTime time)
+		public static IntPtr DateTimeTotime_t (System.DateTime time)
 		{
 			return new IntPtr (((long)time.Subtract (local_epoch).TotalSeconds) - utc_offset);
 		}
 
-		public static DateTime time_tToDateTime (IntPtr time_t)
+		public static System.DateTime time_tToDateTime (IntPtr time_t)
 		{
 			return local_epoch.AddSeconds (time_t.ToInt64 () + utc_offset);
 		}
 
-		[DllImport("glibsharpglue-2")]
-		static extern IntPtr gtksharp_unichar_to_utf8_string (uint c);
+		[DllImport (Global.GLibNativeDll, CallingConvention = CallingConvention.Cdecl)]
+		static extern IntPtr g_malloc0 (UIntPtr size);
+
+		[DllImport (Global.GLibNativeDll, CallingConvention = CallingConvention.Cdecl)]
+		static extern int g_unichar_to_utf8 (uint c, IntPtr buf);
 
 		public static char GUnicharToChar (uint ucs4_char)
 		{ 
 			if (ucs4_char == 0)
 				return (char) 0;
 
-			IntPtr raw_ret = gtksharp_unichar_to_utf8_string (ucs4_char);
-			string ret = GLib.Marshaller.PtrToStringGFree(raw_ret);
-			if (ret.Length > 1)
+			string ret = GUnicharToString (ucs4_char);
+			if (ret.Length != 1)
 				throw new ArgumentOutOfRangeException ("ucs4char is not representable by a char.");
 
 			return ret [0];
 		}
 
-		[DllImport("glibsharpglue-2")]
-		static extern uint glibsharp_utf16_to_unichar (ushort c);
+		public static string GUnicharToString (uint ucs4_char)
+		{ 
+			if (ucs4_char == 0)
+				return String.Empty;
+
+			IntPtr buf = g_malloc0 (new UIntPtr (7));
+			g_unichar_to_utf8 (ucs4_char, buf);
+			return PtrToStringGFree (buf);
+		}
+
+		[DllImport (Global.GLibNativeDll, CallingConvention = CallingConvention.Cdecl)]
+		static extern IntPtr g_utf16_to_ucs4 (ref ushort c, IntPtr len, IntPtr d1, IntPtr d2, IntPtr d3);
 
 		public static uint CharToGUnichar (char c)
 		{
-			return glibsharp_utf16_to_unichar ((ushort) c);
+			ushort val = (ushort) c;
+			IntPtr ucs4_str = g_utf16_to_ucs4 (ref val, new IntPtr (1), IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+			uint result = (uint) Marshal.ReadInt32 (ucs4_str);
+			g_free (ucs4_str);
+			return result;
 		}
 
 		public static IntPtr StructureToPtrAlloc (object o)
@@ -370,8 +307,31 @@ namespace GLib {
 			return result;
 		}
 
+		public static IntPtr ArrayToArrayPtr (byte[] array)
+		{
+			IntPtr ret = Malloc ((ulong) array.Length);
+			Marshal.Copy (array, 0, ret, array.Length);
+			return ret;
+		}
+
+		public static Array ArrayPtrToArray (IntPtr array_ptr, Type element_type, int length, bool owned)
+		{
+			Array result = null;
+			if (element_type == typeof (byte)) {
+				byte[] ret = new byte [length];
+				Marshal.Copy (array_ptr, ret, 0, length);
+				result = ret;
+			} else {
+				throw new InvalidOperationException ("Marshaling of " + element_type + " arrays is not supported");
+			}
+			if (owned)
+				Free (array_ptr);
+			return result;
+		}
+
 		public static Array ListPtrToArray (IntPtr list_ptr, Type list_type, bool owned, bool elements_owned, Type elem_type)
 		{
+			Type array_type = elem_type == typeof (ListBase.FilenameString) ? typeof (string) : elem_type;
 			ListBase list;
 			if (list_type == typeof(GLib.List))
 				list = new GLib.List (list_ptr, elem_type, owned, elements_owned);
@@ -379,7 +339,7 @@ namespace GLib {
 				list = new GLib.SList (list_ptr, elem_type, owned, elements_owned);
 
 			using (list)
-				return ListToArray (list, elem_type);
+				return ListToArray (list, array_type);
 		}
 
 		public static Array PtrArrayToArray (IntPtr list_ptr, bool owned, bool elements_owned, Type elem_type)
@@ -401,6 +361,39 @@ namespace GLib {
 				list.elements_owned = false;
 
 			return result;
+		}
+
+		public static T[] StructArrayFromNullTerminatedIntPtr<T> (IntPtr array)
+		{
+			var res = new List<T> ();
+			IntPtr current = array;
+			T currentStruct = default(T);
+
+			while (current != IntPtr.Zero) {
+				Marshal.PtrToStructure (current, currentStruct);
+				res.Add (currentStruct);
+				current = (IntPtr) ((long)current + Marshal.SizeOf (typeof (T)));
+			}
+
+			return res.ToArray ();
+		}
+
+		public static IntPtr StructArrayToNullTerminatedStructArrayIntPtr<T> (T[] InputArray)
+		{
+			int intPtrSize = Marshal.SizeOf (typeof (IntPtr));
+			IntPtr mem = Marshal.AllocHGlobal ((InputArray.Length + 1) * intPtrSize);
+
+			for (int i = 0; i < InputArray.Length; i++) {
+				IntPtr structPtr = Marshal.AllocHGlobal (Marshal.SizeOf (typeof (T)));
+				Marshal.StructureToPtr (InputArray[i], structPtr, false);
+				// jump to next pointer
+				Marshal.WriteIntPtr (mem, structPtr);
+				mem = (IntPtr) ((long)mem + intPtrSize);
+			}
+			// null terminate
+			Marshal.WriteIntPtr (mem, IntPtr.Zero);
+
+			return mem;
 		}
 	}
 }

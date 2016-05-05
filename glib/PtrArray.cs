@@ -32,7 +32,7 @@ namespace GLib {
 		internal bool elements_owned = false;
 		protected System.Type element_type = null;
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern IntPtr g_ptr_array_sized_new (uint n_preallocs);
 
 		public PtrArray (uint n_preallocs, System.Type element_type, bool owned, bool elements_owned)
@@ -43,7 +43,7 @@ namespace GLib {
 			this.elements_owned = elements_owned;
 		}
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern IntPtr g_ptr_array_new ();
 
 		public PtrArray (System.Type element_type, bool owned, bool elements_owned)
@@ -77,14 +77,11 @@ namespace GLib {
 			GC.SuppressFinalize (this);
 		}
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void g_ptr_array_free (IntPtr raw, bool free_seg);
 
-		[DllImport ("libglib-2.0-0.dll")]
+		[DllImport (Global.GLibNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void g_object_unref (IntPtr item);
-
-		[DllImport ("libglib-2.0-0.dll")]
-		static extern void g_free (IntPtr item);
 
 		void Dispose (bool disposing)
 		{
@@ -99,7 +96,7 @@ namespace GLib {
 					else if (typeof (GLib.Opaque).IsAssignableFrom (element_type))
 						GLib.Opaque.GetOpaque (NthData (i), element_type, true).Dispose ();
 					else 
-						g_free (NthData (i));
+						Marshaller.Free (NthData (i));
 			}
 
 			if (managed)
@@ -114,16 +111,13 @@ namespace GLib {
 			}
 		}
 
-		[DllImport("glibsharpglue-2")]
-		static extern IntPtr gtksharp_ptr_array_get_array (IntPtr raw);
-
 		public IntPtr ArrayPtr {
 			get {
-				return gtksharp_ptr_array_get_array (Handle);
+				return Marshal.ReadIntPtr (Handle);
 			}
 		}
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void g_ptr_array_add (IntPtr raw, IntPtr val);
 
 		public void Add (IntPtr val)
@@ -131,7 +125,7 @@ namespace GLib {
 			g_ptr_array_add (Handle, val);
 		}
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void g_ptr_array_remove (IntPtr raw, IntPtr data);
 
 		public void Remove (IntPtr data)
@@ -139,7 +133,7 @@ namespace GLib {
 			g_ptr_array_remove (Handle, data);
 		}
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void g_ptr_array_remove_range (IntPtr raw, uint index, uint length);
 
 		public void RemoveRange (IntPtr data, uint index, uint length)
@@ -147,18 +141,18 @@ namespace GLib {
 			g_ptr_array_remove_range (Handle, index, length);
 		}
 
-		[DllImport("glibsharpglue-2")]
-		static extern int gtksharp_ptr_array_get_count (IntPtr raw);
+		struct GPtrArray {
+			public IntPtr pdata;
+			public uint len;
+		}
 
 		// ICollection
 		public int Count {
 			get {
-				return gtksharp_ptr_array_get_count (Handle);
+				GPtrArray native = (GPtrArray) Marshal.PtrToStructure (Handle, typeof (GPtrArray));
+				return (int) native.len;
 			}
 		}
-
-		[DllImport("glibsharpglue-2")]
-		static extern IntPtr gtksharp_ptr_array_get_nth (IntPtr raw, uint idx);
 
 		public object this [int index] { 
 			get {
@@ -196,7 +190,7 @@ namespace GLib {
 
 		internal IntPtr NthData (uint index)
 		{
-			return gtksharp_ptr_array_get_nth (Handle, index);;
+			return Marshal.ReadIntPtr (ArrayPtr, (int) index * IntPtr.Size);;
 		}
 
 		// Synchronization could be tricky here. Hmm.
@@ -263,7 +257,7 @@ namespace GLib {
 			return new ListEnumerator (this);
 		}
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern IntPtr g_ptr_array_copy (IntPtr raw);
 
 		// ICloneable

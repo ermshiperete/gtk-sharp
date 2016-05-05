@@ -2,7 +2,7 @@
 //
 // Author: Mike Kestner <mkestner@novell.com>
 //
-// Copyright <c> 2007 Novell, Inc.
+// Copyright <c> 2007, 2011 Novell, Inc.
 //
 // This program is free software; you can redistribute it and/or
 // modify it under the terms of version 2 of the Lesser GNU General 
@@ -19,19 +19,18 @@
 // Boston, MA 02111-1307, USA.
 
 
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+
 namespace GLib {
 
-	using System;
-	using System.Collections;
-	using System.Runtime.InteropServices;
-
-	internal class ToggleRef {
+	internal class ToggleRef : IDisposable {
 
 		bool hardened;
 		IntPtr handle;
 		object reference;
 		GCHandle gch;
-		Hashtable signals;
 
 		public ToggleRef (GLib.Object target)
 		{
@@ -42,29 +41,8 @@ namespace GLib {
 			g_object_unref (target.Handle);
 		}
 
-		public bool IsAlive {
-			get {
-				if (reference is WeakReference) {
-					WeakReference weak = reference as WeakReference;
-					return weak.IsAlive;
-				} else if (reference == null)
-					return false;
-				return true;
-			}
-		}
-
 		public IntPtr Handle {
-			get {
-				return handle;
-			}
-		}
-
-		public Hashtable Signals {
-			get {
-				if (signals == null)
-					signals = new Hashtable ();
-				return signals;
-			}
+			get { return handle; }
 		}
 
 		public GLib.Object Target {
@@ -74,17 +52,21 @@ namespace GLib {
 				else if (reference is GLib.Object)
 					return reference as GLib.Object;
 
-				WeakReference weak = reference as WeakReference;
+				WeakReference weak = (WeakReference)reference;
 				return weak.Target as GLib.Object;
 			}
 		}
 
-  		public void Free ()
+		public void Dispose ()
+		{
+			lock (PendingDestroys) {
+				PendingDestroys.Remove (this);
+			}
+			Free ();
+		}
+
+  		void Free ()
   		{
-			Signal[] signals = new Signal [Signals.Count];
-			Signals.Values.CopyTo (signals, 0);
-			foreach (Signal s in signals)
-				s.Free ();
 			if (hardened)
 				g_object_unref (handle);
 			else
@@ -115,19 +97,18 @@ namespace GLib {
 				reference = new WeakReference (reference);
 			else if (!is_last_ref && reference is WeakReference) {
 				WeakReference weak = reference as WeakReference;
-				if (weak.IsAlive)
-					reference = weak.Target;
+				reference = weak.Target;
 			}
 		}
 
-		[CDeclCallback]
+		[UnmanagedFunctionPointer (CallingConvention.Cdecl)]
 		delegate void ToggleNotifyHandler (IntPtr data, IntPtr handle, bool is_last_ref);
 
 		static void RefToggled (IntPtr data, IntPtr handle, bool is_last_ref)
 		{
 			try {
 				GCHandle gch = (GCHandle) data;
-				ToggleRef tref = gch.Target as ToggleRef;
+				ToggleRef tref = (ToggleRef)gch.Target;
 				tref.Toggle (is_last_ref);
 			} catch (Exception e) {
 				ExceptionManager.RaiseUnhandledException (e, false);
@@ -143,16 +124,47 @@ namespace GLib {
 			}
 		}
 
-		[DllImport("libgobject-2.0-0.dll")]
+		static List<ToggleRef> PendingDestroys = new List<ToggleRef> ();
+		static bool idle_queued;
+
+		public void QueueUnref ()
+		{
+			lock (PendingDestroys) {
+				PendingDestroys.Add (this);
+				if (!idle_queued){
+					Timeout.Add (50, new TimeoutHandler (PerformQueuedUnrefs));
+					idle_queued = true;
+				}
+			}
+		}
+
+		static bool PerformQueuedUnrefs ()
+		{
+			ToggleRef[] references;
+
+			lock (PendingDestroys){
+				references = new ToggleRef [PendingDestroys.Count];
+				PendingDestroys.CopyTo (references, 0);
+				PendingDestroys.Clear ();
+				idle_queued = false;
+			}
+
+			foreach (ToggleRef r in references)
+				r.Free ();
+
+			return false;
+		}
+
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void g_object_add_toggle_ref (IntPtr raw, ToggleNotifyHandler notify_cb, IntPtr data);
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void g_object_remove_toggle_ref (IntPtr raw, ToggleNotifyHandler notify_cb, IntPtr data);
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern IntPtr g_object_ref (IntPtr raw);
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void g_object_unref (IntPtr raw);
 
 	}

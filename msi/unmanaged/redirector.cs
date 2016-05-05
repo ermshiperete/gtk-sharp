@@ -39,11 +39,14 @@ namespace GtkSharpInstaller {
 				return 1;
 			}
 
+			var outfile = new FileInfo (args [1]);
+			outfile.Directory.Create ();
+
 			ProcessStartInfo info = new ProcessStartInfo (args [0]);
 			info.RedirectStandardOutput = true;
 			info.UseShellExecute = false;
 			Process proc = Process.Start (info);
-			StreamWriter sw = new StreamWriter (File.Create (args [1]));
+			StreamWriter sw = new StreamWriter (outfile.Create ());
 			sw.WriteLine (proc.StandardOutput.ReadToEnd ());
 			sw.Close ();
 			return 0;

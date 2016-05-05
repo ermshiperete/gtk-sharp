@@ -29,7 +29,6 @@ namespace GLib {
 
 		EventArgs args;
 		GLib.Object obj;
-		object result;
 
 		public ClosureInvokedArgs (GLib.Object obj, EventArgs args)
 		{
@@ -50,6 +49,13 @@ namespace GLib {
 		}
 	}
 
+	struct GClosure {
+		public long fields;
+		public IntPtr marshaler;
+		public IntPtr data;
+		public IntPtr notifiers;
+	}
+
 	internal delegate void ClosureInvokedHandler (object o, ClosureInvokedArgs args);
 
 	internal class SignalClosure : IDisposable {
@@ -66,7 +72,9 @@ namespace GLib {
 
 		public SignalClosure (IntPtr obj, string signal_name, System.Type args_type)
 		{
-			raw_closure = glibsharp_closure_new (Marshaler, Notify, IntPtr.Zero);
+			raw_closure = g_closure_new_simple (Marshal.SizeOf (typeof (GClosure)), IntPtr.Zero);
+			g_closure_set_marshal (raw_closure, Marshaler);
+			g_closure_add_finalize_notifier (raw_closure, IntPtr.Zero, Notify);
 			closures [raw_closure] = this;
 			handle = obj;
 			name = signal_name;
@@ -127,7 +135,7 @@ namespace GLib {
 			}
 		}
 
-		[CDeclCallback]
+		[UnmanagedFunctionPointer (CallingConvention.Cdecl)]
 		delegate void ClosureMarshal (IntPtr closure, IntPtr return_val, uint n_param_vals, IntPtr param_values, IntPtr invocation_hint, IntPtr marshal_data);
 
 		static void MarshalCallback (IntPtr raw_closure, IntPtr return_val, uint n_param_vals, IntPtr param_values, IntPtr invocation_hint, IntPtr marshal_data)
@@ -174,7 +182,7 @@ namespace GLib {
 			}
 		}
 
-		[CDeclCallback]
+		[UnmanagedFunctionPointer (CallingConvention.Cdecl)]
 		delegate void ClosureNotify (IntPtr data, IntPtr closure);
 
 		static void NotifyCallback (IntPtr data, IntPtr raw_closure)
@@ -193,19 +201,25 @@ namespace GLib {
 			}
 		}
 
-		[DllImport("glibsharpglue-2")]
-		static extern IntPtr glibsharp_closure_new (ClosureMarshal marshaler, ClosureNotify notify, IntPtr gch);
-
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern IntPtr g_cclosure_new (Delegate cb, IntPtr user_data, ClosureNotify notify);
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
+		static extern IntPtr g_closure_new_simple (int closure_size, IntPtr dummy);
+
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
+		static extern void g_closure_set_marshal (IntPtr closure, ClosureMarshal marshaler);
+
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
+		static extern void g_closure_add_finalize_notifier (IntPtr closure, IntPtr dummy, ClosureNotify notify);
+
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern uint g_signal_connect_closure (IntPtr obj, IntPtr name, IntPtr closure, bool is_after);
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void g_signal_handler_disconnect (IntPtr instance, uint handler);
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern bool g_signal_handler_is_connected (IntPtr instance, uint handler);
 	}
 }

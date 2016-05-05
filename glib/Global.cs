@@ -1,8 +1,9 @@
 // GLib.Global.cs - Global glib properties and methods.
 //
-// Author: Andres G. Aragoneses <aaragoneses@novell.com>
+// Authors: Andres G. Aragoneses <aaragoneses@novell.com>
+//          Stephane Delcroix (stephane@delcroix.org)
 //
-// Copyright (c) 2008 Novell, Inc
+// Copyright (c) 2008 Novell, Inc.
 //
 // This program is free software; you can redistribute it and/or
 // modify it under the terms of version 2 of the Lesser GNU General 
@@ -22,7 +23,6 @@
 namespace GLib {
 
 	using System;
-	using System.Text;
 	using System.Runtime.InteropServices;
 
 	public class Global
@@ -30,6 +30,9 @@ namespace GLib {
 
 		//this is a static class
 		private Global () {}
+
+		internal const string GLibNativeDll = "libglib-2.0-0.dll";
+		internal const string GObjectNativeDll = "libgobject-2.0-0.dll";
 
 		internal static bool IsWindowsPlatform {
 			get {
@@ -47,7 +50,7 @@ namespace GLib {
 
 		public static string ProgramName {
 			get {
-				return GLib.Marshaller.PtrToStringGFree(g_get_prgname());
+				return GLib.Marshaller.Utf8PtrToString (g_get_prgname());
 			}
 			set { 
 				IntPtr native_name = GLib.Marshaller.StringToPtrGStrdup (value);
@@ -56,15 +59,15 @@ namespace GLib {
 			}
 		}
 
-		[DllImport("libglib-2.0-0.dll")]
+		[DllImport (Global.GLibNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void g_set_prgname (IntPtr name);
 
-		[DllImport("libglib-2.0-0.dll")]
+		[DllImport (Global.GLibNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern IntPtr g_get_prgname ();
 
 		public static string ApplicationName {
 			get {
-				return GLib.Marshaller.PtrToStringGFree(g_get_application_name());	
+				return GLib.Marshaller.Utf8PtrToString (g_get_application_name());	
 			}
 			set {
 				IntPtr native_name = GLib.Marshaller.StringToPtrGStrdup (value);
@@ -73,10 +76,18 @@ namespace GLib {
 			}
 		}
 
-		[DllImport("libglib-2.0-0.dll")]
+		[DllImport (Global.GLibNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void g_set_application_name (IntPtr name);
 
-		[DllImport("libglib-2.0-0.dll")]
+		[DllImport (Global.GLibNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern IntPtr g_get_application_name ();
+
+		[DllImport (Global.GLibNativeDll, CallingConvention = CallingConvention.Cdecl)]
+		static extern IntPtr g_format_size_for_display (long size);
+		
+		static public string FormatSizeForDisplay (long size)
+		{
+			return Marshaller.PtrToStringGFree (g_format_size_for_display (size));
+		}
 	}
 }

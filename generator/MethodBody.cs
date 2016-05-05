@@ -30,7 +30,7 @@ namespace GtkSharp.Generation {
 		
 		Parameters parameters;
 
-		public MethodBody (Parameters parms) 
+		public MethodBody (Parameters parms)
 		{
 			parameters = parms;
 		}
@@ -66,7 +66,7 @@ namespace GtkSharp.Generation {
 
 				if (p.IsUserData && parameters.IsHidden (p) && !parameters.HideData &&
 					   (i == 0 || parameters [i - 1].Scope != "notified")) {
-					call_parm = "IntPtr.Zero"; 
+					call_parm = "IntPtr.Zero";
 				}
 
 				result [i] += call_parm;
@@ -101,17 +101,26 @@ namespace GtkSharp.Generation {
 				if (gen is CallbackGen) {
 					CallbackGen cbgen = gen as CallbackGen;
 					string wrapper = cbgen.GenWrapper(gen_info);
+
+					int closure = i + 1;
+					if (p.Closure >= 0)
+						closure = p.Closure;
+
+					int destroyNotify = i + 2;
+					if (p.DestroyNotify >= 0)
+						destroyNotify = p.DestroyNotify;
+
 					switch (p.Scope) {
 					case "notified":
 						sw.WriteLine (indent + "\t\t\t{0} {1}_wrapper = new {0} ({1});", wrapper, name);
-						sw.WriteLine (indent + "\t\t\tIntPtr {0};", parameters [i + 1].Name);
-						sw.WriteLine (indent + "\t\t\t{0} {1};", parameters [i + 2].CSType, parameters [i + 2].Name);
+						sw.WriteLine (indent + "\t\t\tIntPtr {0};", parameters [closure].Name);
+						sw.WriteLine (indent + "\t\t\t{0} {1};", parameters [destroyNotify].CSType, parameters [destroyNotify].Name);
 						sw.WriteLine (indent + "\t\t\tif ({0} == null) {{", name);
-						sw.WriteLine (indent + "\t\t\t\t{0} = IntPtr.Zero;", parameters [i + 1].Name);
-						sw.WriteLine (indent + "\t\t\t\t{0} = null;", parameters [i + 2].Name);
+						sw.WriteLine (indent + "\t\t\t\t{0} = IntPtr.Zero;", parameters [closure].Name);
+						sw.WriteLine (indent + "\t\t\t\t{0} = null;", parameters [destroyNotify].Name);
 						sw.WriteLine (indent + "\t\t\t} else {");
-						sw.WriteLine (indent + "\t\t\t\t{0} = (IntPtr) GCHandle.Alloc ({1}_wrapper);", parameters [i + 1].Name, name);
-						sw.WriteLine (indent + "\t\t\t\t{0} = GLib.DestroyHelper.NotifyHandler;", parameters [i + 2].Name, parameters [i + 2].CSType);
+						sw.WriteLine (indent + "\t\t\t\t{0} = (IntPtr) GCHandle.Alloc ({1}_wrapper);", parameters [closure].Name, name);
+						sw.WriteLine (indent + "\t\t\t\t{0} = GLib.DestroyHelper.NotifyHandler;", parameters [destroyNotify].Name, parameters [destroyNotify].CSType);
 						sw.WriteLine (indent + "\t\t\t}");
 						break;
 
@@ -122,7 +131,7 @@ namespace GtkSharp.Generation {
 					case "call":
 					default:
 						if (p.Scope == String.Empty)
-							Console.WriteLine ("Defaulting " + gen.Name + " param to 'call' scope in method " + gen_info.CurrentMember);
+							Console.WriteLine (gen_info.CurrentMember + " - defaulting " + gen.Name + " param to 'call' scope. Specify callback scope (call|async|notified) attribute with fixup.");
 						sw.WriteLine (indent + "\t\t\t{0} {1}_wrapper = new {0} ({1});", wrapper, name);
 						break;
 					}
@@ -140,9 +149,12 @@ namespace GtkSharp.Generation {
 
 		public void Finish (StreamWriter sw, string indent)
 		{
-			foreach (Parameter p in parameters)
+			foreach (Parameter p in parameters) {
+				if (parameters.IsHidden (p))
+					continue;
 				foreach (string s in p.Finish)
 					sw.WriteLine(indent + "\t\t\t" + s);
+			}
 		}
 
 		public void FinishAccessor (StreamWriter sw, Signature sig, string indent)

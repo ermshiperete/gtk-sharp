@@ -27,23 +27,18 @@ namespace GLib
 	public class Thread
 	{
 		private Thread () {}
-		
-		[DllImport("libgthread-2.0-0.dll")]
-		static extern void g_thread_init (IntPtr i);
 
+		[Obsolete ("This is no longer needed, GLib automatically initializes threads")]
 		public static void Init ()
 		{
-			g_thread_init (IntPtr.Zero);
+			// GLib automatically inits threads in 2.31 and above
+			// http://developer.gnome.org/glib/unstable/glib-Deprecated-Thread-APIs.html#g-thread-init
 		}
-
-		[DllImport("glibsharpglue-2")]
-		static extern bool glibsharp_g_thread_supported ();
 
 		public static bool Supported
 		{
-			get {
-				return glibsharp_g_thread_supported ();
-			}
+			get { return true; }
 		}
+
 	}
 }

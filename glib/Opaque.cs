@@ -27,23 +27,17 @@
 namespace GLib {
 
 	using System;
-	using System.Collections;
-	using System.ComponentModel;
-	using System.Runtime.InteropServices;
 
 	public class Opaque : IWrapper, IDisposable {
 
 		IntPtr _obj;
 		bool owned;
 
-		[Obsolete ("Use more explicit overload.  This method always returns null")]
-		public static Opaque GetOpaque (IntPtr o)
-		{
-			return null;
-		}
-
 		public static Opaque GetOpaque (IntPtr o, Type type, bool owned)
 		{
+			if (o == IntPtr.Zero)
+				return null;
+
 			Opaque opaque = (Opaque)Activator.CreateInstance (type, new object[] { o });
 			if (owned) {
 				if (opaque.owned) {
@@ -73,6 +67,10 @@ namespace GLib {
 				return _obj;
 			}
 			set {
+				if (_obj == value) {
+					return;
+				}
+
 				if (_obj != IntPtr.Zero) {
 					Unref (_obj);
 					if (owned)
@@ -84,12 +82,6 @@ namespace GLib {
 				}
 			}
 		}       
-
-		~Opaque ()
-		{
-			// for compat.  All subclasses should have
-			// generated finalizers if needed now.
-		}
 
 		public virtual void Dispose ()
 		{

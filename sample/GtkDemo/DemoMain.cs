@@ -1,5 +1,5 @@
 using System;
-using System.Collections;
+using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 
@@ -180,8 +180,8 @@ namespace GtkDemo
 			scrolledWindow.Add (textView);
 
 			if (IsSource) {
-				FontDescription fontDescription = FontDescription.FromString ("Courier 12");
-				textView.ModifyFont (fontDescription);
+				FontDescription fontDescription = FontDescription.FromString ("monospace");
+				textView.OverrideFont (fontDescription);
 				textView.WrapMode = Gtk.WrapMode.None;
 			} else {
 				// Make it a bit nicer for text
@@ -191,13 +191,13 @@ namespace GtkDemo
 			}
 
 			return scrolledWindow;
-	        }
+		}
 
 		private TreeStore FillTree ()
 		{
 			// title, filename, italic
 			store = new TreeStore (typeof (string), typeof (System.Type), typeof (bool));
-			Hashtable parents = new Hashtable ();
+			Dictionary<string, TreeIter> parents = new Dictionary<string, TreeIter> ();
 			TreeIter parent;
 
 			Type[] types = Assembly.GetExecutingAssembly ().GetTypes ();
@@ -205,10 +205,10 @@ namespace GtkDemo
 				object[] att = t.GetCustomAttributes (typeof (DemoAttribute), false);
 				foreach (DemoAttribute demo in att) {
 					if (demo.Parent != null) {
-						if (!parents.Contains (demo.Parent))
+						if (!parents.ContainsKey (demo.Parent))
 							parents.Add (demo.Parent, store.AppendValues (demo.Parent));
 
-						parent = (TreeIter) parents[demo.Parent];
+						parent = parents[demo.Parent];
 						store.AppendValues (parent, demo.Label, t, false);
 					} else {
 						store.AppendValues (demo.Label, t, false);
@@ -222,7 +222,7 @@ namespace GtkDemo
 		private void TreeChanged (object o, EventArgs args)
 		{
 			TreeIter iter;
-			TreeModel model;
+			ITreeModel model;
 
 			if (treeView.Selection.GetSelected (out model, out iter)) {
 				Type type = (Type) model.GetValue (iter, 1);

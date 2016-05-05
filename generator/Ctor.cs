@@ -23,7 +23,7 @@
 namespace GtkSharp.Generation {
 
 	using System;
-	using System.Collections;
+	using System.Collections.Generic;
 	using System.IO;
 	using System.Xml;
 
@@ -33,10 +33,9 @@ namespace GtkSharp.Generation {
 		private string name;
 		private bool needs_chaining = false;
 
-		public Ctor (XmlElement elem, ClassBase implementor) : base (elem, implementor) 
+		public Ctor (XmlElement elem, ClassBase implementor) : base (elem, implementor)
 		{
-			if (elem.HasAttribute ("preferred"))
-				preferred = true;
+			preferred = elem.GetAttributeAsBoolean ("preferred");
 			if (implementor is ObjectGen)
 				needs_chaining = true;
 			name = implementor.Name;
@@ -52,6 +51,9 @@ namespace GtkSharp.Generation {
 				if (!IsStatic)
 					return String.Empty;
 
+				if (Name != null && Name != String.Empty)
+					return Name;
+
 				string[] toks = CName.Substring(CName.IndexOf("new")).Split ('_');
 				string result = String.Empty;
 
@@ -63,7 +65,7 @@ namespace GtkSharp.Generation {
 
 		void GenerateImport (StreamWriter sw)
 		{
-			sw.WriteLine("\t\t[DllImport(\"" + LibraryName + "\")]");
+			sw.WriteLine("\t\t[DllImport(\"" + LibraryName + "\", CallingConvention = CallingConvention.Cdecl)]");
 			sw.WriteLine("\t\tstatic extern " + Safety + "IntPtr " + CName + "(" + Parameters.ImportSignature + ");");
 			sw.WriteLine();
 		}
@@ -74,7 +76,7 @@ namespace GtkSharp.Generation {
 			sw.WriteLine("\t\t" + Protection + " static " + Safety + Modifiers +  name + " " + StaticName + "(" + Signature + ")");
 			sw.WriteLine("\t\t{");
 
-			Body.Initialize(gen_info, false, false, ""); 
+			Body.Initialize(gen_info, false, false, "");
 
 			sw.Write("\t\t\t" + name + " result = ");
 			if (container_type is StructBase)
@@ -83,15 +85,12 @@ namespace GtkSharp.Generation {
 				sw.Write ("new {0} (", name);
 			sw.WriteLine (CName + "(" + Body.GetCallString (false) + "));");
 			Body.Finish (sw, ""); 
-			Body.HandleException (sw, ""); 
+			Body.HandleException (sw, "");
 			sw.WriteLine ("\t\t\treturn result;");
 		}
 
 		public void Generate (GenerationInfo gen_info)
 		{
-			if (!Validate ())
-				return;
-
 			StreamWriter sw = gen_info.Writer;
 			gen_info.CurrentMember = CName;
 
@@ -110,8 +109,8 @@ namespace GtkSharp.Generation {
 						sw.WriteLine ("\t\t\t\tCreateNativeObject (new string [0], new GLib.Value[0]);");
 						sw.WriteLine ("\t\t\t\treturn;");
 					} else {
-						ArrayList names = new ArrayList ();
-						ArrayList values = new ArrayList ();
+						var names = new List<string> ();
+						var values = new List<string> ();
 						for (int i = 0; i < Parameters.Count; i++) {
 							Parameter p = Parameters[i];
 							if (container_type.GetPropertyRecursively (p.StudlyName) != null) {
@@ -124,8 +123,8 @@ namespace GtkSharp.Generation {
 						}
 
 						if (names.Count == Parameters.Count) {
-							sw.WriteLine ("\t\t\t\tArrayList vals = new ArrayList();");
-							sw.WriteLine ("\t\t\t\tArrayList names = new ArrayList();");
+							sw.WriteLine ("\t\t\t\tvar vals = new List<GLib.Value> ();");
+							sw.WriteLine ("\t\t\t\tvar names = new List<string> ();");
 							for (int i = 0; i < names.Count; i++) {
 								Parameter p = Parameters [i];
 								string indent = "\t\t\t\t";
@@ -140,7 +139,7 @@ namespace GtkSharp.Generation {
 									sw.WriteLine ("\t\t\t\t}");
 							}
 
-							sw.WriteLine ("\t\t\t\tCreateNativeObject ((string[])names.ToArray (typeof (string)), (GLib.Value[])vals.ToArray (typeof (GLib.Value)));");
+							sw.WriteLine ("\t\t\t\tCreateNativeObject (names.ToArray (), vals.ToArray ());");
 							sw.WriteLine ("\t\t\t\treturn;");
 						} else
 							sw.WriteLine ("\t\t\t\tthrow new InvalidOperationException (\"Can't override this constructor.\");");

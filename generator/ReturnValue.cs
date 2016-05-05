@@ -31,19 +31,40 @@ namespace GtkSharp.Generation {
 		bool is_array;
 		bool elements_owned;
 		bool owned;
+		string array_length_param = String.Empty;
+		int array_length_param_index = -1;
 		string ctype = String.Empty;
+		string default_value = String.Empty;
 		string element_ctype = String.Empty;
+		Parameter count_param;
 
-		public ReturnValue (XmlElement elem) 
+		public ReturnValue (XmlElement elem)
 		{
 			if (elem != null) {
-				is_null_term = elem.HasAttribute ("null_term_array");
-				is_array = elem.HasAttribute ("array");
-				elements_owned = elem.GetAttribute ("elements_owned") == "true";
-				owned = elem.GetAttribute ("owned") == "true";
+				is_null_term = elem.GetAttributeAsBoolean ("null_term_array");
+				is_array = elem.GetAttributeAsBoolean ("array") || elem.HasAttribute ("array_length_param");
+				array_length_param = elem.GetAttribute ("array_length_param");
+				if (elem.HasAttribute ("array_length_param_length"))
+					array_length_param_index = int.Parse (elem.GetAttribute ("array_length_param_index"));
+				elements_owned = elem.GetAttributeAsBoolean ("elements_owned");
+				owned = elem.GetAttributeAsBoolean ("owned");
 				ctype = elem.GetAttribute("type");
+				default_value = elem.GetAttribute ("default_value");
 				element_ctype = elem.GetAttribute ("element_type");
 			}
+		}
+
+		public Parameter CountParameter {
+			get { return count_param; }
+			set { count_param = value; }
+		}
+
+		public string CountParameterName {
+			get { return array_length_param; }
+		}
+
+		public int CountParameterIndex {
+			get { return array_length_param_index; }
 		}
 
 		public string CType {
@@ -66,6 +87,8 @@ namespace GtkSharp.Generation {
 
 		public string DefaultValue {
 			get {
+				if (!String.IsNullOrEmpty (default_value))
+					return default_value;
 				if (IGen == null)
 					return String.Empty;
 				return IGen.DefaultValue;
@@ -82,7 +105,7 @@ namespace GtkSharp.Generation {
 		}
 
 		IGeneratable igen;
-		IGeneratable IGen {
+		public IGeneratable IGen {
 			get {
 				if (igen == null)
 					igen = SymbolTable.Table [CType];
@@ -100,9 +123,9 @@ namespace GtkSharp.Generation {
 			get {
 				if (IGen == null)
 					return String.Empty;
-				else if (is_null_term)
+				else if (is_array || is_null_term)
 					return "IntPtr";
-				return IGen.MarshalReturnType + (is_array ? "[]" : String.Empty);
+				return IGen.MarshalType;
 			}
 		}
 
@@ -110,9 +133,9 @@ namespace GtkSharp.Generation {
 			get {
 				if (IGen == null)
 					return String.Empty;
-				else if (is_null_term)
-					return "IntPtr"; //FIXME
-				return IGen.ToNativeReturnType + (is_array ? "[]" : String.Empty);
+				if (is_array || is_null_term)
+					return "IntPtr";
+				return IGen.MarshalType;
 			}
 		}
 
@@ -126,13 +149,15 @@ namespace GtkSharp.Generation {
 				if (IGen.QualifiedName == "GLib.PtrArray")
 					return String.Format ("({0}[]) GLib.Marshaller.PtrArrayToArray ({1}, {2}, typeof({0}))", ElementType, var, args);
 				else
-					return String.Format ("({0}[]) GLib.Marshaller.ListPtrToArray ({1}, typeof({2}), {3}, typeof({0}))", ElementType, var, IGen.QualifiedName, args);
-			} else if (IGen is HandleBase)
-				return ((HandleBase)IGen).FromNative (var, owned);
+					return String.Format ("({0}[]) GLib.Marshaller.ListPtrToArray ({1}, typeof({2}), {3}, typeof({4}))", ElementType, var, IGen.QualifiedName, args, element_ctype == "gfilename*" ? "GLib.ListBase.FilenameString" : ElementType);
+			} else if (IGen is IOwnable)
+				return ((IOwnable)IGen).FromNative (var, owned);
 			else if (is_null_term)
 				return String.Format ("GLib.Marshaller.NullTermPtrToStringArray ({0}, {1})", var, owned ? "true" : "false");
+			else if (is_array)
+				return String.Format ("({0}) GLib.Marshaller.ArrayPtrToArray ({1}, typeof ({2}), (int){3}native_{4}, true)", CSType, var, IGen.QualifiedName, CountParameter.CSType == "int" ? String.Empty : "(" + CountParameter.CSType + ")", CountParameter.Name);
 			else
-				return IGen.FromNativeReturn (var);
+				return IGen.FromNative (var);
 		}
 			
 		public string ToNative (string var)
@@ -144,7 +169,9 @@ namespace GtkSharp.Generation {
 				string args = ", typeof (" + ElementType + "), " + (owned ? "true" : "false") + ", " + (elements_owned ? "true" : "false");
 				var = "new " + IGen.QualifiedName + "(" + var + args + ")";
 			} else if (is_null_term)
-				return String.Format ("GLib.Marshaller.StringArrayToNullTermPtr ({0})", var);
+				return String.Format ("GLib.Marshaller.StringArrayToNullTermStrvPointer ({0})", var);
+			else if (is_array)
+				return String.Format ("GLib.Marshaller.ArrayToArrayPtr ({0})", var);
 
 			if (IGen is IManualMarshaler)
 				return (IGen as IManualMarshaler).AllocNative (var);
@@ -153,13 +180,19 @@ namespace GtkSharp.Generation {
 			else if (IGen is OpaqueGen && owned)
 				return var + " == null ? IntPtr.Zero : " + var + ".OwnedCopy";
 			else
-				return IGen.ToNativeReturn (var);
+				return IGen.CallByName (var);
 		}
 
-		public bool Validate ()
+		public bool Validate (LogWriter log)
 		{
 			if (MarshalType == "" || CSType == "") {
-				Console.Write("rettype: " + CType);
+				log.Warn ("Unknown return type: {0}", CType);
+				return false;
+			} else if ((CSType == "GLib.List" || CSType == "GLib.SList") && String.IsNullOrEmpty (ElementType))
+				log.Warn ("Returns {0} with unknown element type.  Add element_type attribute with gapi-fixup.", CType);
+
+			if (is_array && !is_null_term && String.IsNullOrEmpty (array_length_param)) {
+				log.Warn ("Returns an array with undeterminable length. Add null_term_array or array_length_param attribute with gapi-fixup.");
 				return false;
 			}
 

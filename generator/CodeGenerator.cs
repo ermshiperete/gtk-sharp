@@ -2,7 +2,7 @@
 //
 // Author: Mike Kestner <mkestner@speakeasy.net>
 //
-// Copyright (c) 2001-2003 Mike Kestner 
+// Copyright (c) 2001-2003 Mike Kestner
 // Copyright (c) 2003-2004 Novell Inc.
 //
 // This program is free software; you can redistribute it and/or
@@ -23,75 +23,100 @@
 namespace GtkSharp.Generation {
 
 	using System;
-	using System.Collections;
+	using System.Collections.Generic;
+	using System.IO;
 	using System.Xml;
 
 	public class CodeGenerator  {
 
 		public static int Main (string[] args)
 		{
-			if (args.Length < 2) {
-				Console.WriteLine ("Usage: codegen --generate <filename1...>");
-				return 0;
-			}
-
-			bool generate = false;
+			bool show_help = false;
 			string dir = "";
-			string custom_dir = "";
 			string assembly_name = "";
+			string gapidir = "";
 			string glue_filename = "";
 			string glue_includes = "";
 			string gluelib_name = "";
+			string schema_name = "";
 
 			SymbolTable table = SymbolTable.Table;
-			ArrayList gens = new ArrayList ();
-			foreach (string arg in args) {
-				string filename = arg;
-				if (arg == "--generate") {
-					generate = true;
-					continue;
-				} else if (arg == "--include") {
-					generate = false;
-					continue;
-				} else if (arg.StartsWith ("-I:")) {
-					generate = false;
-					filename = filename.Substring (3);
-				} else if (arg.StartsWith ("--outdir=")) {
-					generate = false;
-					dir = arg.Substring (9);
-					continue;
-				} else if (arg.StartsWith ("--customdir=")) {
-					generate = false;
-					custom_dir = arg.Substring (12);
-					continue;
-				} else if (arg.StartsWith ("--assembly-name=")) {
-					generate = false;
-					assembly_name = arg.Substring (16);
-					continue;
-				} else if (arg.StartsWith ("--glue-filename=")) {
-					generate = false;
-					glue_filename = arg.Substring (16);
-					continue;
-				} else if (arg.StartsWith ("--glue-includes=")) {
-					generate = false;
-					glue_includes = arg.Substring (16);
-					continue;
-				} else if (arg.StartsWith ("--gluelib-name=")) {
-					generate = false;
-					gluelib_name = arg.Substring (15);
-					continue;
-				}
+			var gens = new List<IGeneratable> ();
 
-				Parser p = new Parser ();
-				IGeneratable[] curr_gens = p.Parse (filename);
+			var filenames = new List<string> ();
+			var includes = new List<string> ();
+
+			var options = new OptionSet () {
+				{ "generate=", "Generate the C# code for this GAPI XML file.",
+					(string v) => { filenames.Add (v); } },
+				{ "I|include=", "GAPI XML file that contain symbols used in the main GAPI XML file.",
+					(string v) => { includes.Add (v); } },
+				{ "outdir=", "Directory where the C# files will be generated.",
+					(string v) => { dir = v; } },
+				{ "assembly-name=", "Name of the assembly for which the code is generated.",
+					(string v) => { assembly_name = v; } },
+				{ "gapidir=", "GAPI xml data  folder.",
+					(string v) => { gapidir = v; } },
+				{ "glue-filename=", "Filename for the generated C glue code.",
+					(string v) => { glue_filename = v; } },
+				{ "glue-includes=", "Content of #include directive to add in the generated C glue code.",
+					(string v) => { glue_includes = v; } },
+				{ "gluelib-name=", "Name of the C library into which the C glue code will be compiled. " +
+					"Used to generated correct DllImport attributes.",
+					(string v) => { gluelib_name = v; } },
+				{ "schema=", "Validate all GAPI XML files against this XSD schema.",
+					(string v) => { schema_name  = v; } },
+				{ "h|help",  "Show this message and exit",
+					v => show_help = v != null },
+			};
+
+			List<string> extra;
+			try {
+				extra = options.Parse (args);
+			}
+			catch (OptionException e) {
+				Console.Write ("gapi-codegen: ");
+				Console.WriteLine (e.Message);
+				Console.WriteLine ("Try `gapi-codegen --help' for more information.");
+				return 64;
+			}
+
+			if (show_help) {
+				ShowHelp (options);
+				return 0;
+			}
+
+			if (filenames.Count == 0) {
+				Console.WriteLine ("You need to specify a file to process using the --generate option.");
+				Console.WriteLine ("Try `gapi-codegen --help' for more information.");
+				return 64;
+			}
+
+			if (extra.Exists (v => { return v.StartsWith ("--customdir"); })) {
+				Console.WriteLine ("Using .custom files is not supported anymore, use partial classes instead.");
+				return 64;
+			}
+
+			if (!String.IsNullOrEmpty (schema_name) && !File.Exists (schema_name)) {
+				Console.WriteLine ("WARNING: Could not find schema file at '{0}', no validation will be done.", schema_name);
+				schema_name = null;
+			}
+
+			Parser p = new Parser ();
+			foreach (string include in includes) {
+				IGeneratable[] curr_gens = p.Parse (include, schema_name, gapidir);
 				table.AddTypes (curr_gens);
-				if (generate)
-					gens.AddRange (curr_gens);
+			}
+
+			foreach (string filename in filenames) {
+				IGeneratable[] curr_gens = p.Parse (filename, schema_name, gapidir);
+				table.AddTypes (curr_gens);
+				gens.AddRange (curr_gens);
 			}
 
 			// Now that everything is loaded, validate all the to-be-
 			// generated generatables and then remove the invalid ones.
-			ArrayList invalids = new ArrayList ();
+			var invalids = new List<IGeneratable> ();
 			foreach (IGeneratable gen in gens) {
 				if (!gen.Validate ())
 					invalids.Add (gen);
@@ -101,7 +126,7 @@ namespace GtkSharp.Generation {
 
 			GenerationInfo gen_info = null;
 			if (dir != "" || assembly_name != "" || glue_filename != "" || glue_includes != "" || gluelib_name != "")
-				gen_info = new GenerationInfo (dir, custom_dir, assembly_name, glue_filename, glue_includes, gluelib_name);
+				gen_info = new GenerationInfo (dir, assembly_name, glue_filename, glue_includes, gluelib_name);
 			
 			foreach (IGeneratable gen in gens) {
 				if (gen_info == null)
@@ -117,6 +142,14 @@ namespace GtkSharp.Generation {
 
 			Statistics.Report();
 			return 0;
+		}
+
+		static void ShowHelp (OptionSet p)
+		{
+			Console.WriteLine ("Usage: gapi-codegen [OPTIONS]+");
+			Console.WriteLine ();
+			Console.WriteLine ("Options:");
+			p.WriteOptionDescriptions (Console.Out);
 		}
 	}
 }

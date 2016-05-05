@@ -2,6 +2,8 @@
 <api>
   <namespace name="GLib" library="libglib-2.0-0.dll">
     <enum name="ConnectFlags" cname="GConnectFlags" type="flags" />
+    <enum name="IOCondition" cname="GIOCondition" type="enum" />
+    <enum name="SeekType" cname="GSeekType" type="enum" />
     <enum name="SpawnError" cname="GSpawnError" type="enum" />
     <enum name="SpawnFlags" cname="GSpawnFlags" type="flags" />
     <callback name="GSourceFunc" cname="GSourceFunc">
@@ -17,4 +19,5 @@
       </parameters>
     </callback>
   </namespace>
+  <symbol type="manual" cname="GKeyFile" name="GLib.KeyFile" />
 </api>

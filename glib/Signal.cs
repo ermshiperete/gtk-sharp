@@ -23,7 +23,6 @@
 namespace GLib {
 
 	using System;
-	using System.Collections;
 	using System.Runtime.InteropServices;
 
 	[Flags]
@@ -52,7 +51,18 @@ namespace GLib {
 			public Flags run_type;
 		}
 
-		[CDeclCallback]
+		[StructLayout (LayoutKind.Sequential)]
+		struct Query {
+			public uint signal_id;
+			public IntPtr signal_name;
+			public IntPtr itype;
+			public Flags signal_flags;
+			public IntPtr return_type;
+			public uint n_params;
+			public IntPtr param_types;
+		}
+
+		[UnmanagedFunctionPointer (CallingConvention.Cdecl)]
 		public delegate bool EmissionHookNative (ref InvocationHint hint, uint n_pvals, IntPtr pvals, IntPtr data);
 
 		public delegate bool EmissionHook (InvocationHint ihint, object[] inst_and_param_values);
@@ -122,27 +132,27 @@ namespace GLib {
 			}
 		}
 
-		ToggleRef tref;
+		GLib.Object obj;
 		string name;
 		Type args_type;
 		SignalClosure before_closure;
 		SignalClosure after_closure;
+		Delegate after_handler;
+		Delegate before_handler;
 		Delegate marshaler;
 
-		private Signal (GLib.Object obj, string signal_name, Delegate marshaler)
+		internal Signal (GLib.Object obj, string name, Delegate marshaler)
 		{
-			tref = obj.ToggleRef;
-			name = signal_name;
-			tref.Signals [name] = this;
+			this.obj = obj;
+			this.name = name;
 			this.marshaler = marshaler;
 		}
 
-		private Signal (GLib.Object obj, string signal_name, Type args_type)
+		internal Signal (GLib.Object obj, string name, Type args_type)
 		{
-			tref = obj.ToggleRef;
-			name = signal_name;
+			this.obj = obj;
+			this.name = name;
 			this.args_type = args_type;
-			tref.Signals [name] = this;
 		}
 
 		internal void Free ()
@@ -159,19 +169,14 @@ namespace GLib {
 			if (o == before_closure) {
 				before_closure.Disposed -= new EventHandler (ClosureDisposedHandler);
 				before_closure.Invoked -= new ClosureInvokedHandler (ClosureInvokedCB);
-				if (tref.Target != null)
-					tref.Target.BeforeSignals.Remove (name);
 				before_closure = null;
+				before_handler = null;
 			} else if (o == after_closure) {
 				after_closure.Disposed -= new EventHandler (ClosureDisposedHandler);
 				after_closure.Invoked -= new ClosureInvokedHandler (ClosureInvokedCB);
-				if (tref.Target != null)
-					tref.Target.AfterSignals.Remove (name);
 				after_closure = null;
+				after_handler = null;
 			}
-
-			if (before_closure == null && after_closure == null)
-				tref.Signals.Remove (name);
 		}
 
 		EventHandler closure_disposed_cb;
@@ -187,9 +192,9 @@ namespace GLib {
 		{
 			Delegate handler;
 			if (o == before_closure)
-				handler = args.Target.BeforeSignals [name] as Delegate;
+				handler = before_handler;
 			else
-				handler = args.Target.AfterSignals [name] as Delegate;
+				handler = after_handler;
 
 			if (handler != null)
 				handler.DynamicInvoke (new object[] {args.Target, args.Args});
@@ -204,35 +209,13 @@ namespace GLib {
 			}
 		}
 
-		public static Signal Lookup (GLib.Object obj, string name)
-		{
-			return Lookup (obj, name, typeof (EventArgs));
-		}
-
-		public static Signal Lookup (GLib.Object obj, string name, Delegate marshaler)
-		{
-			Signal result = obj.ToggleRef.Signals [name] as Signal;
-			if (result == null)
-				result = new Signal (obj, name, marshaler);
-			return result;
-		}
-
-		public static Signal Lookup (GLib.Object obj, string name, Type args_type)
-		{
-			Signal result = obj.ToggleRef.Signals [name] as Signal;
-			if (result == null)
-				result = new Signal (obj, name, args_type);
-			return result;
-		}
-
-
 		public Delegate Handler {
 			get {
-				InvocationHint hint = (InvocationHint) Marshal.PtrToStructure (g_signal_get_invocation_hint (tref.Handle), typeof (InvocationHint));
+				InvocationHint hint = (InvocationHint) Marshal.PtrToStructure (g_signal_get_invocation_hint (obj.Handle), typeof (InvocationHint));
 				if (hint.run_type == Flags.RunFirst)
-					return tref.Target.BeforeSignals [name] as Delegate;
+					return before_handler;
 				else
-					return tref.Target.AfterSignals [name] as Delegate;
+					return after_handler;
 			}
 		}
 
@@ -242,23 +225,23 @@ namespace GLib {
 				args_type = d.Method.GetParameters ()[1].ParameterType;
 
 			if (d.Method.IsDefined (typeof (ConnectBeforeAttribute), false)) {
-				tref.Target.BeforeSignals [name] = Delegate.Combine (tref.Target.BeforeSignals [name] as Delegate, d);
+				before_handler = Delegate.Combine (before_handler, d);
 				if (before_closure == null) {
 					if (marshaler == null)
-						before_closure = new SignalClosure (tref.Handle, name, args_type);
+						before_closure = new SignalClosure (obj.Handle, name, args_type);
 					else
-						before_closure = new SignalClosure (tref.Handle, name, marshaler, this);
+						before_closure = new SignalClosure (obj.Handle, name, marshaler, this);
 					before_closure.Disposed += ClosureDisposedHandler;
 					before_closure.Invoked += ClosureInvokedHandler;
 					before_closure.Connect (false);
 				}
 			} else {
-				tref.Target.AfterSignals [name] = Delegate.Combine (tref.Target.AfterSignals [name] as Delegate, d);
+				after_handler = Delegate.Combine (after_handler, d);
 				if (after_closure == null) {
 					if (marshaler == null)
-						after_closure = new SignalClosure (tref.Handle, name, args_type);
+						after_closure = new SignalClosure (obj.Handle, name, args_type);
 					else
-						after_closure = new SignalClosure (tref.Handle, name, marshaler, this);
+						after_closure = new SignalClosure (obj.Handle, name, marshaler, this);
 					after_closure.Disposed += ClosureDisposedHandler;
 					after_closure.Invoked += ClosureInvokedHandler;
 					after_closure.Connect (true);
@@ -268,18 +251,15 @@ namespace GLib {
 
 		public void RemoveDelegate (Delegate d)
 		{
-			if (tref.Target == null)
-				return;
-
 			if (d.Method.IsDefined (typeof (ConnectBeforeAttribute), false)) {
-				tref.Target.BeforeSignals [name] = Delegate.Remove (tref.Target.BeforeSignals [name] as Delegate, d);
-				if (tref.Target.BeforeSignals [name] == null && before_closure != null) {
+				before_handler = Delegate.Remove (before_handler, d);
+				if (before_handler == null && before_closure != null) {
 					before_closure.Dispose ();
 					before_closure = null;
 				}
 			} else {
-				tref.Target.AfterSignals [name] = Delegate.Remove (tref.Target.AfterSignals [name] as Delegate, d);
-				if (tref.Target.AfterSignals [name] == null && after_closure != null) {
+				after_handler = Delegate.Remove (after_handler, d);
+				if (after_handler == null && after_closure != null) {
 					after_closure.Dispose ();
 					after_closure = null;
 				}
@@ -321,7 +301,9 @@ namespace GLib {
 			}
 
 			object ret_obj = null;
-			if (glibsharp_signal_get_return_type (signal_id) != GType.None.Val) {
+			Query query;
+			g_signal_query (signal_id, out query);
+			if (query.return_type != GType.None.Val) {
 				GLib.Value ret = GLib.Value.Empty;
 				g_signal_emitv (inst_and_params.ArrayPtr, signal_id, gquark, ref ret);
 				ret_obj = ret.Val;
@@ -344,7 +326,7 @@ namespace GLib {
 
 		private static uint GetSignalId (string signal_name, GLib.Object obj)
 		{
-			IntPtr typeid = gtksharp_get_type_id (obj.Handle);
+			IntPtr typeid = GType.ValFromInstancePtr (obj.Handle);
 			return GetSignalId (signal_name, typeid);
 		}
 		
@@ -367,29 +349,40 @@ namespace GLib {
 			return g_signal_add_emission_hook (signal_id, gquark, new EmissionHookMarshaler (handler_func).Callback, IntPtr.Zero, IntPtr.Zero);
 		}
 		
-		[DllImport("libgobject-2.0-0.dll")]
+		internal static void OverrideDefaultHandler (GType gtype, string name, Delegate cb)
+		{
+			IntPtr closure = g_cclosure_new (cb, IntPtr.Zero, IntPtr.Zero);
+			gtype.EnsureClass ();
+			uint id = GetSignalId (name, gtype.Val);
+			g_signal_override_class_closure (id, gtype.Val, closure);
+		}
+
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
+		static extern IntPtr g_cclosure_new (Delegate cb, IntPtr data, IntPtr notify);
+
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern IntPtr g_signal_get_invocation_hint (IntPtr instance);
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void g_signal_emitv (IntPtr instance_and_params, uint signal_id, uint gquark_detail, ref GLib.Value return_value);
 		
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void g_signal_emitv (IntPtr instance_and_params, uint signal_id, uint gquark_detail, IntPtr return_value);
 		
-		[DllImport("glibsharpglue-2")]
-		static extern IntPtr glibsharp_signal_get_return_type (uint signal_id);
-		
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern uint g_signal_lookup (IntPtr name, IntPtr itype);
 		
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
+		static extern void g_signal_override_class_closure (uint id, IntPtr gtype, IntPtr closure);
+		
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
+		static extern void g_signal_query (uint signal_id, out Query query);
+
 		//better not to expose g_quark_from_static_string () due to memory allocation issues
-		[DllImport("libglib-2.0-0.dll")]
+		[DllImport (Global.GLibNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern uint g_quark_from_string (IntPtr str);
 		
-		[DllImport("glibsharpglue-2")]
-		static extern IntPtr gtksharp_get_type_id (IntPtr raw);
-		
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern ulong g_signal_add_emission_hook (uint signal_id, uint gquark_detail, EmissionHookNative hook_func, IntPtr hook_data, IntPtr data_destroy);
 
 	}

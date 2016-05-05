@@ -38,42 +38,57 @@ namespace Cairo
 	{
 		IntPtr handle;
 
-		internal static FontFace Lookup (IntPtr handle)
+		internal static FontFace Lookup (IntPtr handle, bool owner)
 		{
 			if (handle == IntPtr.Zero)
 				return null;
-
-			NativeMethods.cairo_font_face_reference (handle);
-
-			return new FontFace (handle);
+			return new FontFace (handle, owner);
 		}
 
 		~FontFace ()
 		{
-			// Since Cairo is not thread safe, we can not unref the
-			// font_face here, the programmer must do this with IDisposable.Dispose
-
-			Console.Error.WriteLine ("Programmer forgot to call Dispose on the FontFace");
 			Dispose (false);
 		}
 
-		void IDisposable.Dispose ()
+		public void Dispose ()
 		{
 			Dispose (true);
+			GC.SuppressFinalize (this);
 		}
 
 		protected virtual void Dispose (bool disposing)
 		{
-			if (disposing)
-				NativeMethods.cairo_font_face_destroy (handle);
+			if (!disposing || CairoDebug.Enabled)
+				CairoDebug.OnDisposed<FontFace> (handle, disposing);
+
+			if (handle == IntPtr.Zero)
+				return;
+
+			NativeMethods.cairo_font_face_destroy (handle);
 			handle = IntPtr.Zero;
-			GC.SuppressFinalize (this);
 		}
-		
-		// TODO: make non-public when all entry points are complete in binding
-		public FontFace (IntPtr handle)
+
+		void CheckDisposed ()
 		{
+			if (handle == IntPtr.Zero)
+				throw new ObjectDisposedException ("Object has already been disposed");
+		}
+
+		[Obsolete]
+		public FontFace (IntPtr handle) : this (handle, true)
+		{
+		}
+
+		public FontFace (IntPtr handle, bool owned)
+		{
+			if (handle == IntPtr.Zero)
+				throw new ArgumentException ("handle should not be NULL", "handle");
+
 			this.handle = handle;
+			if (!owned)
+				NativeMethods.cairo_font_face_reference (handle);
+			if (CairoDebug.Enabled)
+				CairoDebug.OnAllocated (handle);
 		}
 
 		public IntPtr Handle {
@@ -84,18 +99,23 @@ namespace Cairo
 
 		public Status Status {
 			get {
+				CheckDisposed ();
 				return NativeMethods.cairo_font_face_status (handle);
 			}
 		}
 		
 		public FontType FontType {
 			get {
+				CheckDisposed ();
 				return NativeMethods.cairo_font_face_get_type (handle);
 			}
 		}
 
 		public uint ReferenceCount {
-			get { return NativeMethods.cairo_font_face_get_reference_count (handle); }
+			get {
+				CheckDisposed ();
+				return NativeMethods.cairo_font_face_get_reference_count (handle);
+			}
 		}
 	}
 }

@@ -33,15 +33,34 @@ namespace GLib {
 			this.errptr = errptr;
 		}
 
-		[DllImport("glibsharpglue-2")]
-		static extern IntPtr gtksharp_error_get_message (IntPtr errptr);
-		public override string Message {
+		struct GError {
+			public int Domain;
+			public int Code;
+			public IntPtr Msg;
+		}
+
+		public int Code {
 			get {
-				return Marshaller.Utf8PtrToString (gtksharp_error_get_message (errptr));
+				GError err = (GError) Marshal.PtrToStructure (errptr, typeof (GError));
+				return err.Code;
 			}
 		}
 
-		[DllImport("libglib-2.0-0.dll")]
+		public int Domain {
+			get {
+				GError err = (GError) Marshal.PtrToStructure (errptr, typeof (GError));
+				return err.Domain;
+			}
+		}
+
+		public override string Message {
+			get {
+				GError err = (GError) Marshal.PtrToStructure (errptr, typeof (GError));
+				return Marshaller.Utf8PtrToString (err.Msg);
+			}
+		}
+
+		[DllImport (Global.GLibNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void g_clear_error (ref IntPtr errptr);
 		~GException ()
 		{

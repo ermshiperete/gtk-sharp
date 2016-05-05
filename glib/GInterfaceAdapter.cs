@@ -24,8 +24,10 @@ namespace GLib {
 	using System;
 	using System.Runtime.InteropServices;
 
+	[UnmanagedFunctionPointer (CallingConvention.Cdecl)]
 	public delegate void GInterfaceInitHandler (IntPtr iface_ptr, IntPtr data);
 
+	[UnmanagedFunctionPointer (CallingConvention.Cdecl)]
 	internal delegate void GInterfaceFinalizeHandler (IntPtr iface_ptr, IntPtr data);
 
 	internal struct GInterfaceInfo {
@@ -48,17 +50,12 @@ namespace GLib {
 			}
 		}
 
-		public abstract GType GType { get; }
+		public abstract GType GInterfaceGType { get; }
 
 		public abstract IntPtr Handle { get; }
 
 		internal GInterfaceInfo Info {
-			get {
-				if (info.Data == IntPtr.Zero)
-					info.Data = (IntPtr) GCHandle.Alloc (this);
-
-				return info;
-			}
+			get { return info; }
 		}
 	}
 }

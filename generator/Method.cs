@@ -40,15 +40,11 @@ namespace GtkSharp.Generation {
 		{
 			this.retval = new ReturnValue (elem["return-type"]);
 			
-			if (!container_type.IsDeprecated && elem.HasAttribute ("deprecated")) {
-				string attr = elem.GetAttribute ("deprecated");
-				deprecated = attr == "1" || attr == "true";
+			if (!container_type.IsDeprecated) {
+				deprecated = elem.GetAttributeAsBoolean ("deprecated");
 			}
 			
-			if (elem.HasAttribute ("win32_utf8_variant")) {
-				string attr = elem.GetAttribute ("win32_utf8_variant");
-				win32_utf8_variant = attr == "1" || attr.ToLower () == "true";
-			}
+			win32_utf8_variant = elem.GetAttributeAsBoolean ("win32_utf8_variant");
 
 			if (Name == "GetType")
 				Name = "GetGType";
@@ -82,15 +78,19 @@ namespace GtkSharp.Generation {
 			}
 		}
 
-		public override bool Validate ()
+		public override bool Validate (LogWriter log)
 		{
-			if (!retval.Validate () || !base.Validate ()) {
-				Console.Write(" in method " + Name + " ");
+			log.Member = Name;
+			if (!retval.Validate (log) || !base.Validate (log))
+				return false;
+
+			if (Name == String.Empty || CName == String.Empty) {
+				log.Warn ("Method has no name or cname.");
 				return false;
 			}
 
 			Parameters parms = Parameters;
-			is_get = ((((parms.IsAccessor && retval.IsVoid) || (parms.Count == 0 && !retval.IsVoid)) || (parms.Count == 0 && !retval.IsVoid)) && HasGetterName);
+			is_get = ((parms.IsAccessor && retval.IsVoid) || (parms.Count == 0 && !retval.IsVoid)) && HasGetterName;
 			is_set = ((parms.IsAccessor || (parms.VisibleCount == 1 && retval.IsVoid)) && HasSetterName);
 
 			call = "(" + (IsStatic ? "" : container_type.CallByName () + (parms.Count > 0 ? ", " : "")) + Body.GetCallString (is_set) + ")";
@@ -126,12 +126,15 @@ namespace GtkSharp.Generation {
 			if (implementor != null)
 				dup = implementor.GetMethodRecursively (Name);
 
-			if (Name == "ToString" && Parameters.Count == 0)
+			if (Name == "ToString" && Parameters.Count == 0 && (!(container_type is InterfaceGen)|| implementor != null))
 				sw.Write("override ");
-			else if (Name == "GetGType" && container_type is ObjectGen)
+			else if (Name == "GetGType" && (container_type is ObjectGen || (container_type.Parent != null && container_type.Parent.Methods.ContainsKey ("GetType"))))
 				sw.Write("new ");
 			else if (Modifiers == "new " || (dup != null && ((dup.Signature != null && Signature != null && dup.Signature.ToString() == Signature.ToString()) || (dup.Signature == null && Signature == null))))
 				sw.Write("new ");
+
+			if (Name.StartsWith (container_type.Name))
+				Name = Name.Substring (container_type.Name.Length);
 
 			if (is_get || is_set) {
 				if (retval.IsVoid)
@@ -195,7 +198,7 @@ namespace GtkSharp.Generation {
 			string import_sig = IsStatic ? "" : container_type.MarshalType + " raw";
 			import_sig += !IsStatic && Parameters.Count > 0 ? ", " : "";
 			import_sig += Parameters.ImportSignature.ToString();
-			sw.WriteLine("\t\t[DllImport(\"" + LibraryName + "\")]");
+			sw.WriteLine("\t\t[DllImport(\"" + LibraryName + "\", CallingConvention = CallingConvention.Cdecl)]");
 			if (retval.MarshalType.StartsWith ("[return:"))
 				sw.WriteLine("\t\t" + retval.MarshalType + " static extern " + Safety + retval.CSType + " " + CName + "(" + import_sig + ");");
 			else
@@ -212,11 +215,19 @@ namespace GtkSharp.Generation {
 			}
 		}
 
+		public void GenerateOverloads (StreamWriter sw)
+		{
+			sw.WriteLine ();
+			sw.Write ("\t\tpublic ");
+			if (IsStatic)
+				sw.Write ("static ");
+			sw.WriteLine (retval.CSType + " " + Name + "(" + (Signature != null ? Signature.WithoutOptional () : "") + ") {");
+			sw.WriteLine ("\t\t\t{0}{1} ({2});", !retval.IsVoid ? "return " : String.Empty, Name, Signature.CallWithoutOptionals ());
+			sw.WriteLine ("\t\t}");
+		}
+
 		public void Generate (GenerationInfo gen_info, ClassBase implementor)
 		{
-			if (!Validate ())
-				return;
-
 			Method comp = null;
 
 			gen_info.CurrentMember = Name;
@@ -232,7 +243,7 @@ namespace GtkSharp.Generation {
 						return;
 					else {
 						is_set = false;
-						call = "(Handle, " + Body.GetCallString (false) + ")";
+						call = "(" + (IsStatic ? "" : container_type.CallByName () + (parms.Count > 0 ? ", " : "")) + Body.GetCallString (false) + ")";
 						comp = null;
 					}
 				}
@@ -274,6 +285,9 @@ namespace GtkSharp.Generation {
 			}
 			else
 				gen_info.Writer.WriteLine();
+
+			if (Parameters.HasOptional && !(is_get || is_set))
+				GenerateOverloads (gen_info.Writer);
 			
 			gen_info.Writer.WriteLine();
 
@@ -322,7 +336,7 @@ namespace GtkSharp.Generation {
 			Body.Finish (sw, indent);
 			Body.HandleException (sw, indent);
 
-			if (is_get && Parameters.Count > 0) 
+			if (is_get && Parameters.Count > 0)
 				sw.WriteLine (indent + "\t\t\treturn " + Parameters.AccessorName + ";");
 			else if (!retval.IsVoid)
 				sw.WriteLine (indent + "\t\t\treturn ret;");
@@ -332,10 +346,10 @@ namespace GtkSharp.Generation {
 			sw.Write(indent + "\t\t}");
 		}
 
-		bool IsAccessor { 
-			get { 
-				return retval.IsVoid && Signature.IsAccessor; 
-			} 
+		bool IsAccessor {
+			get {
+				return retval.IsVoid && Signature.IsAccessor;
+			}
 		}
 	}
 }

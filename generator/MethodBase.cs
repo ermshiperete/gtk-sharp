@@ -27,22 +27,21 @@ namespace GtkSharp.Generation {
 
 	public abstract class MethodBase  {
 
-		XmlElement elem;
+		protected XmlElement elem;
 		protected ClassBase container_type;
-		Parameters parms;
-		bool is_static = false;
+		protected Parameters parms;
 		string mods = String.Empty;
 		string name;
 		private string protection = "public";
 
-		protected MethodBase (XmlElement elem, ClassBase container_type) 
+		protected MethodBase (XmlElement elem, ClassBase container_type)
 		{
 			this.elem = elem;
 			this.container_type = container_type;
 			this.name = elem.GetAttribute ("name");
 			parms = new Parameters (elem ["parameters"]);
 			IsStatic = elem.GetAttribute ("shared") == "true";
-			if (elem.HasAttribute ("new_flag"))
+			if (elem.GetAttributeAsBoolean ("new_flag"))
 				mods = "new ";
 			if (elem.HasAttribute ("accessibility")) {
 				string attr = elem.GetAttribute ("accessibility");
@@ -77,7 +76,7 @@ namespace GtkSharp.Generation {
 			}
 		}
 
-		public string CName {
+		public virtual string CName {
 			get {
 				return SymbolTable.Table.MangleName (elem.GetAttribute ("cname"));
 			}
@@ -109,10 +108,9 @@ namespace GtkSharp.Generation {
 
 		public bool IsStatic {
 			get {
-				return is_static;
+				return parms.Static;
 			}
 			set {
-				is_static = value;
 				parms.Static = value;
 			}
 		}
@@ -148,7 +146,8 @@ namespace GtkSharp.Generation {
 				return parms;
 			}
 		}
-	
+
+	
 		public string Protection {
 			get { return protection; }
 			set { protection = value; }
@@ -169,10 +168,10 @@ namespace GtkSharp.Generation {
 			}
 		}
 
-		public virtual bool Validate ()
+		public virtual bool Validate (LogWriter log)
 		{
-			if (!parms.Validate ()) {
-				Console.Write("in " + CName + " ");
+			log.Member = Name;
+			if (!parms.Validate (log)) {
 				Statistics.ThrottledCount++;
 				return false;
 			}

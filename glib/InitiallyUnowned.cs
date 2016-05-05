@@ -18,21 +18,14 @@
 // Free Software Foundation, Inc., 59 Temple Place - Suite 330,
 // Boston, MA 02111-1307, USA.
 
-#if GTK_SHARP_2_10
-
 namespace GLib {
 
 	using System;
-	using System.Collections;
-	using System.ComponentModel;
 	using System.Runtime.InteropServices;
 
 	public class InitiallyUnowned : Object {
 
 		protected InitiallyUnowned (IntPtr raw) : base (raw) {}
-
-		[Obsolete]
-		protected InitiallyUnowned (GType gtype) : base (gtype) {}
 
 		public new static GLib.GType GType {
 			get {
@@ -40,7 +33,43 @@ namespace GLib {
 			}
 		}
 
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
+		private static extern void g_object_ref_sink (IntPtr raw);
+
+		protected override IntPtr Raw {
+			get {
+				return base.Raw;
+			}
+			set {
+				if (value != IntPtr.Zero)
+					g_object_ref_sink (value);
+				base.Raw = value;
+			}
+		}
+
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
+		static extern bool g_object_is_floating (IntPtr raw);
+
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
+		static extern void g_object_force_floating (IntPtr raw);
+
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
+		static extern void g_object_unref (IntPtr raw);
+
+		public bool IsFloating {
+			get {
+				return g_object_is_floating (Handle);
+			}
+			set {
+			  	if (value == true) {
+					if (!IsFloating)
+						g_object_force_floating (Handle);
+				} else {
+					g_object_ref_sink (Handle);
+					g_object_unref (Handle);
+				}
+			}
+		}
 	}
 }
 
-#endif

@@ -23,16 +23,17 @@ namespace GLib {
 
 	using System;
 	using System.Collections;
+	using System.Collections.Generic;
 	using System.Runtime.InteropServices;
 
 	public class ValueArray : IDisposable, ICollection, ICloneable, IWrapper {
 
 		private IntPtr handle = IntPtr.Zero;
 
-		static private ArrayList PendingFrees = new ArrayList ();
+		static private IList<IntPtr> PendingFrees = new List<IntPtr> ();
 		static private bool idle_queued = false;
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern IntPtr g_value_array_new (uint n_preallocs);
 
 		public ValueArray (uint n_preallocs)
@@ -40,7 +41,7 @@ namespace GLib {
 			handle = g_value_array_new (n_preallocs);
 		}
 
-		internal ValueArray (IntPtr raw)
+		public ValueArray (IntPtr raw)
 		{
 			handle = raw;
 		}
@@ -57,7 +58,7 @@ namespace GLib {
 			GC.SuppressFinalize (this);
 		}
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void g_value_array_free (IntPtr raw);
 
 		void Dispose (bool disposing)
@@ -101,16 +102,21 @@ namespace GLib {
 			}
 		}
 
-		[DllImport("glibsharpglue-2")]
-		static extern IntPtr gtksharp_value_array_get_array (IntPtr raw);
-
-		public IntPtr ArrayPtr {
-			get {
-				return gtksharp_value_array_get_array (Handle);
-			}
+		struct NativeStruct {
+			public uint n_values;
+			public IntPtr values;
+			public uint n_prealloced;
 		}
 
-		[DllImport("libgobject-2.0-0.dll")]
+		NativeStruct Native {
+			get { return (NativeStruct) Marshal.PtrToStructure (Handle, typeof(NativeStruct)); }
+		}
+
+		public IntPtr ArrayPtr {
+			get { return Native.values; }
+		}
+
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void g_value_array_append (IntPtr raw, ref GLib.Value val);
 
 		public void Append (GLib.Value val)
@@ -118,7 +124,7 @@ namespace GLib {
 			g_value_array_append (Handle, ref val);
 		}
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void g_value_array_insert (IntPtr raw, uint idx, ref GLib.Value val);
 
 		public void Insert (uint idx, GLib.Value val)
@@ -126,7 +132,7 @@ namespace GLib {
 			g_value_array_insert (Handle, idx, ref val);
 		}
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void g_value_array_prepend (IntPtr raw, ref GLib.Value val);
 
 		public void Prepend (GLib.Value val)
@@ -134,7 +140,7 @@ namespace GLib {
 			g_value_array_prepend (Handle, ref val);
 		}
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void g_value_array_remove (IntPtr raw, uint idx);
 
 		public void Remove (uint idx)
@@ -142,24 +148,18 @@ namespace GLib {
 			g_value_array_remove (Handle, idx);
 		}
 
-		[DllImport("glibsharpglue-2")]
-		static extern int gtksharp_value_array_get_count (IntPtr raw);
-
 		// ICollection
 		public int Count {
-			get {
-				return gtksharp_value_array_get_count (Handle);
-			}
+			get { return (int) Native.n_values; }
 		}
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern IntPtr g_value_array_get_nth (IntPtr raw, uint idx);
 
 		public object this [int index] { 
 			get { 
-				GLib.Value val = Value.Empty;
-				Marshal.PtrToStructure (g_value_array_get_nth (Handle, (uint) index), val);
-				return val;
+				IntPtr raw_val = g_value_array_get_nth (Handle, (uint) index);
+				return Marshal.PtrToStructure (raw_val, typeof (GLib.Value));
 			}
 		}
 
@@ -227,13 +227,22 @@ namespace GLib {
 			return new ListEnumerator (this);
 		}
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern IntPtr g_value_array_copy (IntPtr raw);
 
 		// ICloneable
 		public object Clone ()
 		{
 			return new ValueArray (g_value_array_copy (Handle));
+		}
+
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
+		static extern IntPtr g_value_array_get_type ();
+
+		public static GLib.GType GType {
+			get {
+				return new GLib.GType (g_value_array_get_type ());
+			}
 		}
 	}
 }

@@ -1,30 +1,26 @@
-EXTRA_DIST =				\
-	README				\
-	gtk-sharp-2.12-sources.xml	\
-	gtkclipboard.patch 		\
-	gtk_tree_model_signal_fix.patch \
-	gtk_tree_model_signal_fix-2.10.patch
+EXTRA_DIST =					\
+	README					\
+	sources.xml				\
+	gtk_tree_model_signal_fix.patch
 
+TARGET_GTK_VERSION=3.0.0
 
-GTK_2_12_DOWNLOADS = \
-	http://ftp.gnome.org/pub/GNOME/platform/2.20/2.20.0/sources/pango-1.18.2.tar.bz2	\
-	http://ftp.gnome.org/pub/GNOME/platform/2.20/2.20.0/sources/atk-1.20.0.tar.bz2		\
-	http://ftp.gnome.org/pub/GNOME/platform/2.20/2.20.0/sources/gtk+-2.12.0.tar.bz2		\
-	http://ftp.gnome.org/pub/GNOME/platform/2.20/2.20.0/sources/libglade-2.6.2.tar.bz2
+GTK_DOWNLOADS = \
+	http://ftp.gnome.org/pub/GNOME/sources/glib/2.42/glib-2.42.2.tar.xz			\
+	http://ftp.gnome.org/pub/GNOME/sources/pango/1.28/pango-1.28.3.tar.bz2			\
+	http://ftp.gnome.org/pub/GNOME/sources/atk/2.14/atk-2.14.0.tar.xz			\
+	http://ftp.gnome.org/pub/GNOME/sources/gdk-pixbuf/2.30/gdk-pixbuf-2.30.8.tar.xz		\
+	http://ftp.gnome.org/pub/GNOME/sources/gtk+/3.0/gtk+-$(TARGET_GTK_VERSION).tar.bz2
 
-api: api-2.12
+api: 
+	PATH=../parser:$$PATH $(RUNTIME) ../parser/gapi-parser.exe sources.xml
 
-api-2.12:
-	PATH=../parser:$$PATH $(RUNTIME) ../parser/gapi-parser.exe gtk-sharp-2.12-sources.xml
-
-get-source-code: get-2.12-sources 
-
-get-2.12-sources:
-	for i in $(GTK_2_12_DOWNLOADS); do                  \
+get-source-code:
+	for i in $(GTK_DOWNLOADS); do                  \
 		wget $$i --output-document=- | tar -xj ;   \
 	done;
-	ln -f -s gtkfilechooserprivate.h gtk+-2.12.0/gtk/gtkfilechooserpriv.h
-	patch -p0 gtk+-2.12.0/gtk/gtktreemodel.c < gtk_tree_model_signal_fix-2.10.patch
-	echo "typedef struct _GtkClipboard GtkClipboard;" >> gtk+-2.12.0/gtk/gtkclipboard.h
-	echo "typedef struct _GtkClipboardClass GtkClipboardClass;" >> gtk+-2.12.0/gtk/gtkclipboard.h
+	ln -f -s gtkfilechooserprivate.h gtk+-$(TARGET_GTK_VERSION)/gtk/gtkfilechooserpriv.h
+	patch -p0 gtk+-$(TARGET_GTK_VERSION)/gtk/gtktreemodel.c < gtk_tree_model_signal_fix.patch
+	echo "typedef struct _GtkClipboard GtkClipboard;" >> gtk+-$(TARGET_GTK_VERSION)/gtk/gtkclipboard.h
+	echo "typedef struct _GtkClipboardClass GtkClipboardClass;" >> gtk+-$(TARGET_GTK_VERSION)/gtk/gtkclipboard.h
 

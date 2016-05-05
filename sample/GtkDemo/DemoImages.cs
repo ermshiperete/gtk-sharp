@@ -156,7 +156,7 @@ namespace GtkDemo
 				pixbufLoader.AreaUpdated += new AreaUpdatedHandler (ProgressiveUpdatedCallback);
 			}
 
-			if (imageStream.PeekChar () != -1) {
+			if (imageStream.BaseStream.Position != imageStream.BaseStream.Length) {
 				byte[] bytes = imageStream.ReadBytes (256);
 				pixbufLoader.Write (bytes);
 				return true; // leave the timeout active
@@ -170,12 +170,19 @@ namespace GtkDemo
 		{
 			Gdk.Pixbuf pixbuf = pixbufLoader.Pixbuf;
 			pixbuf.Fill (0xaaaaaaff);
-			progressiveImage.FromPixbuf = pixbuf;
+			progressiveImage.Pixbuf = pixbuf;
 		}
 
 		void ProgressiveUpdatedCallback (object obj, AreaUpdatedArgs args)
 		{
-			progressiveImage.QueueDraw ();
+			/* We know the pixbuf inside the GtkImage has changed, but the image
+			 * itself doesn't know this; so give it a hint by setting the pixbuf
+			 * again. Queuing a redraw used to be sufficient, but in recent GTK+,
+			 * GtkImage uses GtkIconHelper which caches the pixbuf state and will
+			 * just redraw from the cache.
+			 */
+			Pixbuf pixbuf = progressiveImage.Pixbuf;
+			progressiveImage.Pixbuf = pixbuf;
 		}
 	}
 }

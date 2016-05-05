@@ -23,16 +23,10 @@ namespace Gtk {
 	using System;
 	using System.Reflection;
 	using System.Runtime.InteropServices;
+	using System.Threading;
 	using Gdk;
 
-	public class Application {
-
-		//
-		// Disables creation of instances.
-		//
-		private Application ()
-		{
-		}
+	public partial class Application {
 
 		const int WS_EX_TOOLWINDOW = 0x00000080;
 		const int WS_OVERLAPPEDWINDOW = 0x00CF0000;
@@ -62,15 +56,17 @@ namespace Gtk {
 			}
 		}
 
-		[DllImport("libgtk-win32-2.0-0.dll")]
+		[DllImport (Global.GtkNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void gtk_init (ref int argc, ref IntPtr argv);
 
-		[DllImport("libgtk-win32-2.0-0.dll")]
+		[DllImport (Global.GtkNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern bool gtk_init_check (ref int argc, ref IntPtr argv);
 
 		static void SetPrgname ()
 		{
-			GLib.Global.ProgramName = System.IO.Path.GetFileNameWithoutExtension (Environment.GetCommandLineArgs () [0]);
+			var args = Environment.GetCommandLineArgs ();
+			if (args != null && args.Length > 0)
+				GLib.Global.ProgramName = System.IO.Path.GetFileNameWithoutExtension (args [0]);
 		}
 
 		public static void Init ()
@@ -80,6 +76,8 @@ namespace Gtk {
 			int argc = 0;
 
 			gtk_init (ref argc, ref argv);
+
+			SynchronizationContext.SetSynchronizationContext (new GLib.GLibSynchronizationContext ());
 		}
 
 		static bool do_init (string progname, ref string[] args, bool check)
@@ -127,7 +125,7 @@ namespace Gtk {
 			return do_init (progname, ref args, true);
 		}
 
-		[DllImport("libgtk-win32-2.0-0.dll")]
+		[DllImport (Global.GtkNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void gtk_main ();
 
 		public static void Run ()
@@ -135,7 +133,7 @@ namespace Gtk {
 			gtk_main ();
 		}
 
-		[DllImport("libgtk-win32-2.0-0.dll")]
+		[DllImport (Global.GtkNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern bool gtk_events_pending ();
 
 
@@ -144,10 +142,10 @@ namespace Gtk {
 			return gtk_events_pending ();
 		}
 
-		[DllImport("libgtk-win32-2.0-0.dll")]
+		[DllImport (Global.GtkNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void gtk_main_iteration ();
 
-		[DllImport("libgtk-win32-2.0-0.dll")]
+		[DllImport (Global.GtkNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern bool gtk_main_iteration_do (bool blocking);
 
 		public static void RunIteration ()
@@ -160,7 +158,7 @@ namespace Gtk {
 			return gtk_main_iteration_do (blocking);
 		}
 		
-		[DllImport("libgtk-win32-2.0-0.dll")]
+		[DllImport (Global.GtkNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void gtk_main_quit ();
 
 		public static void Quit ()
@@ -169,7 +167,7 @@ namespace Gtk {
 		}
 
 
-		[DllImport("libgtk-win32-2.0-0.dll")]
+		[DllImport (Global.GtkNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern IntPtr gtk_get_current_event ();
 
 		public static Gdk.Event CurrentEvent {

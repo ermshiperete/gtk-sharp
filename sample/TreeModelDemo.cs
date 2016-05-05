@@ -57,7 +57,7 @@ namespace GtkSamples {
 
 	}
 
-	public class MyTreeModel : GLib.Object, TreeModelImplementor {
+	public class MyTreeModel : GLib.Object, ITreeModelImplementor {
 
 		Assembly[] assemblies;
 
@@ -105,10 +105,12 @@ namespace GtkSamples {
 		TreeIter IterFromNode (object node)
 		{
 			GCHandle gch;
-			if (node_hash [node] != null)
+			if (node_hash [node] != null) {
 				gch = (GCHandle) node_hash [node];
-			else
+			} else {
 				gch = GCHandle.Alloc (node);
+				node_hash [node] = gch;
+			}
 			TreeIter result = TreeIter.Zero;
 			result.UserData = (IntPtr) gch;
 			return result;
@@ -128,7 +130,7 @@ namespace GtkSamples {
 			object work = node;
 			TreePath path = new TreePath ();
 
-			if (work is MemberInfo) {
+			if ((work is MemberInfo) && !(work is Type)) {
 				Type parent = (work as MemberInfo).ReflectedType;
 				path.PrependIndex (Array.IndexOf (parent.GetMembers (), work));
 				work = parent;
@@ -140,8 +142,9 @@ namespace GtkSamples {
 				work = assm;
 			}
 
-			if (work is Assembly)
-				path.PrependIndex (Array.IndexOf (assemblies, node));
+			if (work is Assembly) {
+				path.PrependIndex (Array.IndexOf (assemblies, work));
+			}
 				
 			return path;
 		}
@@ -208,6 +211,37 @@ namespace GtkSamples {
 				MemberInfo[] siblings = (node as MemberInfo).ReflectedType.GetMembers ();
 				idx = Array.IndexOf (siblings, node) + 1;
 				if (idx < siblings.Length) {
+					iter = IterFromNode (siblings [idx]);
+					return true;
+				}
+			}
+			return false;
+		}
+
+		public bool IterPrevious (ref TreeIter iter)
+		{
+			object node = NodeFromIter (iter);
+			if (node == null)
+				return false;
+
+			int idx;
+			if (node is Assembly) {
+				idx = Array.IndexOf (assemblies, node) - 1;
+				if (idx >= 0) {
+					iter = IterFromNode (assemblies [idx]);
+					return true;
+				}
+			} else if (node is Type) {
+				Type[] siblings = (node as Type).Assembly.GetTypes ();
+				idx = Array.IndexOf (siblings, node) - 1;
+				if (idx >= 0) {
+					iter = IterFromNode (siblings [idx]);
+					return true;
+				}
+			} else {
+				MemberInfo[] siblings = (node as MemberInfo).ReflectedType.GetMembers ();
+				idx = Array.IndexOf (siblings, node) - 1;
+				if (idx >= 0) {
 					iter = IterFromNode (siblings [idx]);
 					return true;
 				}

@@ -8,24 +8,14 @@ references = ../glib/glib-sharp.dll
 glue_includes = atk/atk.h
 
 sources = 			\
-	ColumnDeletedHandler.cs \
-	ColumnInsertedHandler.cs \
-	RowDeletedHandler.cs \
-	RowInsertedHandler.cs \
-	TableAdapter.cs \
-	Table.cs \
-	TextChangedDetail.cs
-
-customs =			\
-	Global.custom		\
-	Hyperlink.custom \
-	Misc.custom		\
-	NoOpObject.custom		\
-	Object.custom		\
-	ObjectFactory.custom		\
-	SelectionAdapter.custom	\
-	TextAdapter.custom	\
-	Util.custom
+	Global.cs		\
+	Hyperlink.cs		\
+	Misc.cs			\
+	Object.cs		\
+	SelectionAdapter.cs	\
+	TextAdapter.cs		\
+	TextChangedDetail.cs	\
+	Util.cs
 
 add_dist =
 

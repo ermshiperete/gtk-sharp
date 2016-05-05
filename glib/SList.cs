@@ -26,7 +26,7 @@ namespace GLib {
 
 	public class SList : ListBase {
 
-		[DllImport("libglib-2.0-0.dll")]
+		[DllImport (Global.GLibNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern IntPtr g_slist_copy (IntPtr l);
 		
 		public override object Clone ()
@@ -34,23 +34,7 @@ namespace GLib {
 			return new SList (g_slist_copy (Handle));
 		}
 		
-		[DllImport("glibsharpglue-2")]
-		static extern IntPtr gtksharp_slist_get_data (IntPtr l);
-		
-		internal override IntPtr GetData (IntPtr current)
-		{
-			return gtksharp_slist_get_data (current);
-		}
-
-		[DllImport("glibsharpglue-2")]
-		static extern IntPtr gtksharp_slist_get_next (IntPtr l);
-		
-		internal override IntPtr Next (IntPtr current)
-		{
-			return gtksharp_slist_get_next (current);
-		}
-
-		[DllImport("libglib-2.0-0.dll")]
+		[DllImport (Global.GLibNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern int g_slist_length (IntPtr l);
 		
 		internal override int Length (IntPtr list)
@@ -58,7 +42,7 @@ namespace GLib {
 			return g_slist_length (list);
 		}
 		
-		[DllImport("libglib-2.0-0.dll")]
+		[DllImport (Global.GLibNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void g_slist_free(IntPtr l);
 
 		internal override void Free (IntPtr list)
@@ -67,7 +51,7 @@ namespace GLib {
 				g_slist_free (list);
 		}
 
-		[DllImport("libglib-2.0-0.dll")]
+		[DllImport (Global.GLibNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern IntPtr g_slist_append (IntPtr l, IntPtr raw);
 
 		internal override IntPtr Append (IntPtr list, IntPtr raw)
@@ -75,7 +59,7 @@ namespace GLib {
 			return g_slist_append (list, raw);
 		}
 
-		[DllImport("libglib-2.0-0.dll")]
+		[DllImport (Global.GLibNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern IntPtr g_slist_prepend (IntPtr l, IntPtr raw);
 
 		internal override IntPtr Prepend (IntPtr list, IntPtr raw)
@@ -84,7 +68,7 @@ namespace GLib {
 		}
 
 
-		[DllImport("libglib-2.0-0.dll")]
+		[DllImport (Global.GLibNativeDll, CallingConvention = CallingConvention.Cdecl)]
 	        static extern IntPtr g_slist_nth_data (IntPtr l, uint n);
 
 		internal override IntPtr NthData (uint n)

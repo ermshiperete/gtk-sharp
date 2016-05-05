@@ -23,13 +23,13 @@
 namespace GtkSharp.Generation {
 
 	using System;
-	using System.Collections;
+	using System.Collections.Generic;
 
 	public class SymbolTable {
 		
 		static SymbolTable table = null;
 
-		Hashtable types = new Hashtable ();
+		IDictionary<string, IGeneratable> types = new Dictionary<string, IGeneratable> ();
 		
 		public static SymbolTable Table {
 			get {
@@ -45,6 +45,7 @@ namespace GtkSharp.Generation {
 			// Simple easily mapped types
 			AddType (new SimpleGen ("void", "void", String.Empty));
 			AddType (new SimpleGen ("gpointer", "IntPtr", "IntPtr.Zero"));
+			AddType (new SimpleGen ("AtkFunction", "IntPtr", "IntPtr.Zero")); // function definition used for padding
 			AddType (new SimpleGen ("gboolean", "bool", "false"));
 			AddType (new SimpleGen ("gint", "int", "0"));
 			AddType (new SimpleGen ("guint", "uint", "0"));
@@ -68,6 +69,7 @@ namespace GtkSharp.Generation {
 			AddType (new SimpleGen ("guint32", "uint", "0"));
 			AddType (new SimpleGen ("gint64", "long", "0"));
 			AddType (new SimpleGen ("guint64", "ulong", "0"));
+			AddType (new SimpleGen ("unsigned long long", "ulong", "0"));
 			AddType (new SimpleGen ("long long", "long", "0"));
 			AddType (new SimpleGen ("gfloat", "float", "0.0"));
 			AddType (new SimpleGen ("float", "float", "0.0"));
@@ -83,12 +85,16 @@ namespace GtkSharp.Generation {
 			AddType (new SimpleGen ("ulong", "uint", "0"));
 			AddType (new SimpleGen ("gulong", "uint", "0"));
 			AddType (new SimpleGen ("unsigned long", "uint", "0"));
+			AddType (new SimpleGen ("gintptr", "int", "0"));
+			AddType (new SimpleGen ("guintptr", "uint", "0"));
 #else
 			AddType (new LPGen ("long"));
 			AddType (new LPGen ("glong"));
+			AddType (new LPGen ("gintptr"));
 			AddType (new LPUGen ("ulong"));
 			AddType (new LPUGen ("gulong"));
 			AddType (new LPUGen ("unsigned long"));
+			AddType (new LPUGen ("guintptr"));
 #endif
 
 			AddType (new LPGen ("ssize_t"));
@@ -118,12 +124,25 @@ namespace GtkSharp.Generation {
 			AddType (new ManualGen ("GList", "GLib.List"));
 			AddType (new ManualGen ("GPtrArray", "GLib.PtrArray"));
 			AddType (new ManualGen ("GSList", "GLib.SList"));
+			AddType (new ManualGen ("GVariant", "GLib.Variant"));
+			AddType (new ManualGen ("GVariantType", "GLib.VariantType"));
+			AddType (new ManualGen ("GValueArray", "GLib.ValueArray"));
+			AddType (new ManualGen ("GMutex", "GLib.Mutex"));
+			AddType (new ManualGen ("GRecMutex", "GLib.RecMutex"));
+			AddType (new ManualGen ("GCond", "GLib.Cond"));
+			AddType (new ManualGen ("GDateTime", "GLib.DateTime"));
+			AddType (new ManualGen ("GDate", "GLib.Date"));
+			AddType (new ManualGen ("GSource", "GLib.Source"));
+			AddType (new ManualGen ("GMainContext", "GLib.MainContext"));
+			AddType (new SimpleGen ("GPollFD", "GLib.PollFD", "GLib.PollFD.Zero"));
 			AddType (new MarshalGen ("gunichar", "char", "uint", "GLib.Marshaller.CharToGUnichar ({0})", "GLib.Marshaller.GUnicharToChar ({0})"));
 			AddType (new MarshalGen ("time_t", "System.DateTime", "IntPtr", "GLib.Marshaller.DateTimeTotime_t ({0})", "GLib.Marshaller.time_tToDateTime ({0})"));
 			AddType (new MarshalGen ("GString", "string", "IntPtr", "new GLib.GString ({0}).Handle", "GLib.GString.PtrToString ({0})"));
-			AddType (new MarshalGen ("GType", "GLib.GType", "IntPtr", "{0}.Val", "new GLib.GType({0})"));
+			AddType (new MarshalGen ("GType", "GLib.GType", "IntPtr", "{0}.Val", "new GLib.GType({0})", "GLib.GType.None"));
 			AddType (new ByRefGen ("GValue", "GLib.Value"));
 			AddType (new SimpleGen ("GDestroyNotify", "GLib.DestroyNotify", "null"));
+			AddType (new SimpleGen ("GThread", "GLib.Thread", "null"));
+			AddType (new ManualGen ("GBytes", "GLib.Bytes"));
 
 			// FIXME: These ought to be handled properly.
 			AddType (new SimpleGen ("GC", "IntPtr", "IntPtr.Zero"));
@@ -160,7 +179,7 @@ namespace GtkSharp.Generation {
 			}
 		}
 		
-		public IEnumerable Generatables {
+		public IEnumerable<IGeneratable> Generatables {
 			get {
 				return types.Values;
 			}
@@ -168,7 +187,7 @@ namespace GtkSharp.Generation {
 		
 		public IGeneratable this [string ctype] {
 			get {
-				return DeAlias (ctype) as IGeneratable;
+				return DeAlias (ctype);
 			}
 		}
 
@@ -200,32 +219,22 @@ namespace GtkSharp.Generation {
 			return trim_type;
 		}
 
-		private object DeAlias (string type)
+		private IGeneratable DeAlias (string type)
 		{
 			type = Trim (type);
-			while (types [type] is AliasGen) {
-				IGeneratable igen = types [type] as AliasGen;
-				types [type] = types [igen.Name];
+			IGeneratable cur_type = null;
+			while (types.TryGetValue (type, out cur_type) && cur_type is AliasGen) {
+				IGeneratable igen = cur_type as AliasGen;
+
+				IGeneratable new_type;
+				if (!types.TryGetValue (igen.Name, out new_type))
+					new_type = null;
+
+				types [type] = new_type;
 				type = igen.Name;
 			}
 
-			return types [type];
-		}
-
-		public string FromNativeReturn(string c_type, string val)
-		{
-			IGeneratable gen = this[c_type];
-			if (gen == null)
-				return "";
-			return gen.FromNativeReturn (val);
-		}
-		
-		public string ToNativeReturn(string c_type, string val)
-		{
-			IGeneratable gen = this[c_type];
-			if (gen == null)
-				return "";
-			return gen.ToNativeReturn (val);
+			return cur_type;
 		}
 
 		public string FromNative(string c_type, string val)
@@ -250,22 +259,6 @@ namespace GtkSharp.Generation {
 			if (gen == null)
 				return "";
 			return gen.Name;
-		}
-		
-		public string GetMarshalReturnType(string c_type)
-		{
-			IGeneratable gen = this[c_type];
-			if (gen == null)
-				return "";
-			return gen.MarshalReturnType;
-		}
-		
-		public string GetToNativeReturnType(string c_type)
-		{
-			IGeneratable gen = this[c_type];
-			if (gen == null)
-				return "";
-			return gen.ToNativeReturnType;
 		}
 		
 		public string GetMarshalType(string c_type)
@@ -307,6 +300,13 @@ namespace GtkSharp.Generation {
 
 			return false;
 		}
+
+		public bool IsUnion (string c_type)
+		{
+			if (this[c_type] is UnionGen)
+				return true;
+			return false;
+		}
 	
 		public bool IsEnum(string c_type)
 		{
@@ -334,7 +334,12 @@ namespace GtkSharp.Generation {
 		{
 			return this[c_type] as ClassBase;
 		}
-			
+
+		public InterfaceGen GetInterfaceGen (string c_type)
+		{
+			return this[c_type] as InterfaceGen;
+		}
+
 		public bool IsObject(string c_type)
 		{
 			if (this[c_type] is ObjectGen)

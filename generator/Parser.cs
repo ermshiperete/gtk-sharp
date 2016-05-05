@@ -23,19 +23,31 @@
 namespace GtkSharp.Generation {
 
 	using System;
-	using System.Collections;
+	using System.Collections.Generic;
 	using System.IO;
 	using System.Xml;
+	using System.Xml.Schema;
 
 	public class Parser  {
-		
-		private XmlDocument Load (string filename)
+		const int curr_parser_version = 3;
+
+		private XmlDocument Load (string filename, string schema_file)
 		{
 			XmlDocument doc = new XmlDocument ();
 
 			try {
+				XmlReaderSettings settings = new XmlReaderSettings ();
+				if (!String.IsNullOrEmpty (schema_file)) {
+					settings.Schemas.Add (null, schema_file);
+					settings.ValidationType = ValidationType.Schema;
+					settings.ValidationFlags |= XmlSchemaValidationFlags.ReportValidationWarnings;
+					settings.ValidationEventHandler += ValidationEventHandler;
+				}
+
 				Stream stream = File.OpenRead (filename);
-				doc.Load (stream);
+				XmlReader reader = XmlReader.Create (stream, settings);
+				doc.Load (reader);
+
 				stream.Close ();
 			} catch (XmlException e) {
 				Console.WriteLine ("Invalid XML file.");
@@ -46,9 +58,32 @@ namespace GtkSharp.Generation {
 			return doc;
 		}
 
+		private void ValidationEventHandler(object sender, ValidationEventArgs e)
+		{
+			switch (e.Severity)
+			{
+			case XmlSeverityType.Error:
+				Console.WriteLine("Error: {0}", e.Message);
+				break;
+			case XmlSeverityType.Warning:
+				Console.WriteLine("Warning: {0}", e.Message);
+				break;
+			}
+		}
+
 		public IGeneratable[] Parse (string filename)
 		{
-			XmlDocument doc = Load (filename);
+			return Parse (filename, null);
+		}
+
+		public IGeneratable[] Parse (string filename, string schema_file)
+		{
+			return Parse (filename, schema_file, String.Empty);
+		}
+
+		public IGeneratable[] Parse (string filename, string schema_file, string gapidir)
+		{
+			XmlDocument doc = Load (filename, schema_file);
 			if (doc == null)
 				return null;
 
@@ -59,7 +94,21 @@ namespace GtkSharp.Generation {
 				return null;
 			}
 
-			ArrayList gens = new ArrayList ();
+			int parser_version;
+			if (root.HasAttribute ("parser_version")) {
+				try {
+					parser_version = int.Parse (root.GetAttribute ("parser_version"));
+				} catch {
+					Console.WriteLine ("ERROR: Unable to parse parser_version attribute value \"{0}\" to a number. Input file {1} will be ignored", root.GetAttribute ("parser_version"), filename);
+					return null;
+				}
+			} else
+				parser_version = 1;
+
+			if (parser_version > curr_parser_version)
+				Console.WriteLine ("WARNING: The input file {0} was created by a parser that was released after this version of the generator. Consider updating the code generator if you experience problems.", filename);
+
+			var gens = new List<IGeneratable> ();
 
 			foreach (XmlNode child in root.ChildNodes) {
 				XmlElement elem = child as XmlElement;
@@ -67,6 +116,21 @@ namespace GtkSharp.Generation {
 					continue;
 
 				switch (child.Name) {
+				case "include":
+					string xmlpath;
+
+					if (File.Exists (Path.Combine (gapidir, elem.GetAttribute ("xml"))))
+						xmlpath = Path.Combine (gapidir, elem.GetAttribute ("xml"));
+					else if (File.Exists (elem.GetAttribute ("xml")))
+					   xmlpath = elem.GetAttribute ("xml");
+					else {
+						Console.WriteLine ("Parser: Could not find include " + elem.GetAttribute ("xml"));
+						break;
+					}
+
+					IGeneratable[] curr_gens = Parse (xmlpath);
+					SymbolTable.Table.AddTypes (curr_gens);
+					break;
 				case "namespace":
 					gens.AddRange (ParseNamespace (elem));
 					break;
@@ -79,12 +143,12 @@ namespace GtkSharp.Generation {
 				}
 			}
 
-			return (IGeneratable[]) gens.ToArray (typeof (IGeneratable));
+			return gens.ToArray ();
 		}
 
-		private ArrayList ParseNamespace (XmlElement ns)
+		private IList<IGeneratable> ParseNamespace (XmlElement ns)
 		{
-			ArrayList result = new ArrayList ();
+			var result = new List<IGeneratable> ();
 
 			foreach (XmlNode def in ns.ChildNodes) {
 
@@ -92,13 +156,11 @@ namespace GtkSharp.Generation {
 				if (elem == null)
 					continue;
 
-				if (elem.HasAttribute("hidden"))
+				if (elem.GetAttributeAsBoolean ("hidden"))
 					continue;
 
-				bool is_opaque = false;
-				if (elem.GetAttribute ("opaque") == "true" ||
-				    elem.GetAttribute ("opaque") == "1")
-					is_opaque = true;
+				bool is_opaque = elem.GetAttributeAsBoolean ("opaque");
+				bool is_native_struct = elem.GetAttributeAsBoolean ("native");
 
 				switch (def.Name) {
 				case "alias":
@@ -109,7 +171,11 @@ namespace GtkSharp.Generation {
 					result.Add (new AliasGen (aname, atype));
 					break;
 				case "boxed":
-					result.Add (is_opaque ? new OpaqueGen (ns, elem) as object : new BoxedGen (ns, elem) as object);
+					if (is_opaque) {
+						result.Add (new OpaqueGen (ns, elem));
+					} else {
+						result.Add (new BoxedGen (ns, elem));
+					}
 					break;
 				case "callback":
 					result.Add (new CallbackGen (ns, elem));
@@ -126,8 +192,17 @@ namespace GtkSharp.Generation {
 				case "class":
 					result.Add (new ClassGen (ns, elem));
 					break;
+				case "union":
+					result.Add (new UnionGen (ns, elem));
+					break;
 				case "struct":
-					result.Add (is_opaque ? new OpaqueGen (ns, elem) as object : new StructGen (ns, elem) as object);
+					if (is_opaque) {
+						result.Add (new OpaqueGen (ns, elem));
+					} else if (is_native_struct) {
+						result.Add (new NativeStructGen (ns, elem));
+					} else {
+						result.Add (new StructGen (ns, elem));
+					}
 					break;
 				default:
 					Console.WriteLine ("Parser::ParseNamespace - Unexpected node: " + def.Name);
@@ -136,6 +211,12 @@ namespace GtkSharp.Generation {
 			}
 
 			return result;
+		}
+
+		internal static int GetVersion (XmlElement document_element)
+		{
+			XmlElement root = document_element;
+			return root.HasAttribute ("parser_version") ? int.Parse (root.GetAttribute ("parser_version")) : 1;
 		}
 
 		private IGeneratable ParseSymbol (XmlElement symbol)
@@ -154,6 +235,8 @@ namespace GtkSharp.Generation {
 				}
 			} else if (type == "manual")
 				result = new ManualGen (cname, name);
+			else if (type == "ownable")
+				result = new OwnableGen (cname, name);
 			else if (type == "alias")
 				result = new AliasGen (cname, name);
 			else if (type == "marshal") {
@@ -161,6 +244,8 @@ namespace GtkSharp.Generation {
 				string call = symbol.GetAttribute ("call_fmt");
 				string from = symbol.GetAttribute ("from_fmt");
 				result = new MarshalGen (cname, name, mtype, call, from);
+			} else if (type == "struct") {
+				result = new ByRefGen (symbol.GetAttribute ("cname"), symbol.GetAttribute ("name"));
 			} else
 				Console.WriteLine ("Parser::ParseSymbol - Unexpected symbol type " + type);
 

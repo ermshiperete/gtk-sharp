@@ -26,34 +26,35 @@
 namespace GtkSharp.Generation {
 	using System;
 	using System.Collections;
+	using System.Collections.Generic;
 	using System.IO;
 	using System.Xml;
 
 	public abstract class ClassBase : GenBase {
-		protected Hashtable props = new Hashtable();
-		protected Hashtable fields = new Hashtable();
-		protected Hashtable sigs = new Hashtable();
-		protected Hashtable methods = new Hashtable();
-		protected ArrayList interfaces = new ArrayList();
-		protected ArrayList managed_interfaces = new ArrayList();
-		protected ArrayList ctors = new ArrayList();
+		private IDictionary<string, Property> props = new Dictionary<string, Property> ();
+		private IDictionary<string, ObjectField> fields = new Dictionary<string, ObjectField> ();
+		private IDictionary<string, Method> methods = new Dictionary<string, Method> ();
+		private IDictionary<string, Constant> constants = new Dictionary<string, Constant>();
+		protected IList<string> interfaces = new List<string>();
+		protected IList<string> managed_interfaces = new List<string>();
+		protected IList<Ctor> ctors = new List<Ctor>();
 
 		private bool ctors_initted = false;
-		private Hashtable clash_map;
+		private Dictionary<string, Ctor> clash_map;
 		private bool deprecated = false;
 		private bool isabstract = false;
 
-		public Hashtable Methods {
+		public IDictionary<string, Method> Methods {
 			get {
 				return methods;
 			}
-		}	
+		}
 
-		public Hashtable Signals {
+		public IDictionary<string, Property> Properties {
 			get {
-				return sigs;
+				return props;
 			}
-		}	
+		}
 
 		public ClassBase Parent {
 			get {
@@ -68,20 +69,13 @@ namespace GtkSharp.Generation {
 
 		protected ClassBase (XmlElement ns, XmlElement elem) : base (ns, elem) {
 					
-			if (elem.HasAttribute ("deprecated")) {
-				string attr = elem.GetAttribute ("deprecated");
-				deprecated = attr == "1" || attr == "true";
-			}
-			
-			if (elem.HasAttribute ("abstract")) {
-				string attr = elem.GetAttribute ("abstract");
-				isabstract = attr == "1" || attr == "true";
-			}
+			deprecated = elem.GetAttributeAsBoolean ("deprecated");
+			isabstract = elem.GetAttributeAsBoolean ("abstract");
 
 			foreach (XmlNode node in elem.ChildNodes) {
 				if (!(node is XmlElement)) continue;
 				XmlElement member = (XmlElement) node;
-				if (member.HasAttribute ("hidden"))
+				if (member.GetAttributeAsBoolean ("hidden"))
 					continue;
 				
 				string name;
@@ -107,19 +101,17 @@ namespace GtkSharp.Generation {
 					fields.Add (name, new ObjectField (member, this));
 					break;
 
-				case "signal":
-					name = member.GetAttribute("name");
-					while (sigs.ContainsKey(name))
-						name += "mangled";
-					sigs.Add (name, new Signal (member, this));
-					break;
-
 				case "implements":
 					ParseImplements (member);
 					break;
 
 				case "constructor":
 					ctors.Add (new Ctor (member, this));
+					break;
+
+				case "constant":
+					name = member.GetAttribute ("name");
+					constants.Add (name, new Constant (member));
 					break;
 
 				default:
@@ -130,16 +122,16 @@ namespace GtkSharp.Generation {
 
 		public override bool Validate ()
 		{
-			if (Parent != null && !Parent.ValidateForSubclass ())
-				return false;
+			LogWriter log = new LogWriter (QualifiedName);
+
 			foreach (string iface in interfaces) {
 				InterfaceGen igen = SymbolTable.Table[iface] as InterfaceGen;
 				if (igen == null) {
-					Console.WriteLine (QualifiedName + " implements unknown GInterface " + iface);
+					log.Warn ("implements unknown GInterface " + iface);
 					return false;
 				}
 				if (!igen.ValidateForSubclass ()) {
-					Console.WriteLine (QualifiedName + " implements invalid GInterface " + iface);
+					log.Warn ("implements invalid GInterface " + iface);
 					return false;
 				}
 			}
@@ -147,70 +139,43 @@ namespace GtkSharp.Generation {
 			ArrayList invalids = new ArrayList ();
 
 			foreach (Property prop in props.Values) {
-				if (!prop.Validate ()) {
-					Console.WriteLine ("in type " + QualifiedName);
+				if (!prop.Validate (log))
 					invalids.Add (prop);
-				}
 			}
 			foreach (Property prop in invalids)
 				props.Remove (prop.Name);
 			invalids.Clear ();
 
-			foreach (Signal sig in sigs.Values) {
-				if (!sig.Validate ()) {
-					Console.WriteLine ("in type " + QualifiedName);
-					invalids.Add (sig);
-				}
-			}
-			foreach (Signal sig in invalids)
-				sigs.Remove (sig.Name);
-			invalids.Clear ();
-
 			foreach (ObjectField field in fields.Values) {
-				if (!field.Validate ()) {
-					Console.WriteLine ("in type " + QualifiedName);
+				if (!field.Validate (log))
 					invalids.Add (field);
-				}
 			}
 			foreach (ObjectField field in invalids)
 				fields.Remove (field.Name);
 			invalids.Clear ();
 
 			foreach (Method method in methods.Values) {
-				if (!method.Validate ()) {
-					Console.WriteLine ("in type " + QualifiedName);
+				if (!method.Validate (log))
 					invalids.Add (method);
-				}
 			}
 			foreach (Method method in invalids)
 				methods.Remove (method.Name);
 			invalids.Clear ();
 
+			foreach (Constant con in constants.Values) {
+				if (!con.Validate (log))
+					invalids.Add (con);
+			}
+			foreach (Constant con in invalids)
+				constants.Remove (con.Name);
+			invalids.Clear ();
+
 			foreach (Ctor ctor in ctors) {
-				if (!ctor.Validate ()) {
-					Console.WriteLine ("in type " + QualifiedName);
+				if (!ctor.Validate (log))
 					invalids.Add (ctor);
-				}
 			}
 			foreach (Ctor ctor in invalids)
 				ctors.Remove (ctor);
-			invalids.Clear ();
-
-			return true;
-		}
-
-		public virtual bool ValidateForSubclass ()
-		{
-			ArrayList invalids = new ArrayList ();
-
-			foreach (Signal sig in sigs.Values) {
-				if (!sig.Validate ()) {
-					Console.WriteLine ("in type " + QualifiedName);
-					invalids.Add (sig);
-				}
-			}
-			foreach (Signal sig in invalids)
-				sigs.Remove (sig.Name);
 			invalids.Clear ();
 
 			return true;
@@ -238,7 +203,7 @@ namespace GtkSharp.Generation {
 			}
 		}
 
-		protected bool IsNodeNameHandled (string name)
+		protected virtual bool IsNodeNameHandled (string name)
 		{
 			switch (name) {
 			case "method":
@@ -248,6 +213,7 @@ namespace GtkSharp.Generation {
 			case "implements":
 			case "constructor":
 			case "disabledefaultconstructor":
+			case "constant":
 				return true;
 				
 			default:
@@ -264,19 +230,16 @@ namespace GtkSharp.Generation {
 				prop.Generate (gen_info, "\t\t", implementor);
 		}
 
-		public void GenSignals (GenerationInfo gen_info, ClassBase implementor)
-		{		
-			if (sigs == null)
-				return;
-
-			foreach (Signal sig in sigs.Values)
-				sig.Generate (gen_info, implementor);
-		}
-
 		protected void GenFields (GenerationInfo gen_info)
 		{
 			foreach (ObjectField field in fields.Values)
 				field.Generate (gen_info, "\t\t");
+		}
+
+		protected void GenConstants (GenerationInfo gen_info)
+		{
+			foreach (Constant con in constants.Values)
+				con.Generate (gen_info, "\t\t");
 		}
 
 		private void ParseImplements (XmlElement member)
@@ -285,7 +248,7 @@ namespace GtkSharp.Generation {
 				if (node.Name != "interface")
 					continue;
 				XmlElement element = (XmlElement) node;
-				if (element.HasAttribute ("hidden"))
+				if (element.GetAttributeAsBoolean ("hidden"))
 					continue;
 				if (element.HasAttribute ("cname"))
 					interfaces.Add (element.GetAttribute ("cname"));
@@ -305,8 +268,8 @@ namespace GtkSharp.Generation {
 				 (fields != null) && fields.ContainsKey(mname.Substring(3))));
 		}
 
-		public void GenMethods (GenerationInfo gen_info, Hashtable collisions, ClassBase implementor)
-		{		
+		public void GenMethods (GenerationInfo gen_info, IDictionary<string, bool> collisions, ClassBase implementor)
+		{
 			if (methods == null)
 				return;
 
@@ -315,7 +278,7 @@ namespace GtkSharp.Generation {
 				    	continue;
 
 				string oname = null, oprotection = null;
-				if (collisions != null && collisions.Contains (method.Name)) {
+				if (collisions != null && collisions.ContainsKey (method.Name)) {
 					oname = method.Name;
 					oprotection = method.Protection;
 					method.Name = QualifiedName + "." + method.Name;
@@ -331,17 +294,16 @@ namespace GtkSharp.Generation {
 
 		public Method GetMethod (string name)
 		{
-			return (Method) methods[name];
+			Method m = null;
+			methods.TryGetValue (name, out m);
+			return m;
 		}
 
 		public Property GetProperty (string name)
 		{
-			return (Property) props[name];
-		}
-
-		public Signal GetSignal (string name)
-		{
-			return (Signal) sigs[name];
+			Property prop = null;
+			props.TryGetValue (name, out prop);
+			return prop;
 		}
 
 		public Method GetMethodRecursively (string name)
@@ -379,34 +341,16 @@ namespace GtkSharp.Generation {
 				p = (Property) klass.GetProperty (name);
 				klass = klass.Parent;
 			}
-
-			return p;
-		}
-
-		public Signal GetSignalRecursively (string name)
-		{
-			return GetSignalRecursively (name, false);
-		}
-		
-		public virtual Signal GetSignalRecursively (string name, bool check_self)
-		{
-			Signal p = null;
-			if (check_self)
-				p = GetSignal (name);
-			if (p == null && Parent != null) 
-				p = Parent.GetSignalRecursively (name, true);
-			
-			if (check_self && p == null) {
+			if (p == null) {
 				foreach (string iface in interfaces) {
 					ClassBase igen = SymbolTable.Table.GetClassGen (iface);
 					if (igen == null)
 						continue;
-					p = igen.GetSignalRecursively (name, true);
+					p = igen.GetPropertyRecursively (name);
 					if (p != null)
 						break;
 				}
 			}
-
 			return p;
 		}
 
@@ -420,7 +364,7 @@ namespace GtkSharp.Generation {
 				return false;
 		}
 
-		public ArrayList Ctors { get { return ctors; } }
+		public IList<Ctor> Ctors { get { return ctors; } }
 
 		bool HasStaticCtor (string name) 
 		{
@@ -442,12 +386,12 @@ namespace GtkSharp.Generation {
 			if (Parent != null)
 				Parent.InitializeCtors ();
 
-			ArrayList valid_ctors = new ArrayList();
-			clash_map = new Hashtable();
+			var valid_ctors = new List<Ctor>();
+			clash_map = new Dictionary<string, Ctor>();
 
 			foreach (Ctor ctor in ctors) {
-				if (clash_map.Contains (ctor.Signature.Types)) {
-					Ctor clash = clash_map [ctor.Signature.Types] as Ctor;
+				if (clash_map.ContainsKey (ctor.Signature.Types)) {
+					Ctor clash = clash_map [ctor.Signature.Types];
 					Ctor alter = ctor.Preferred ? clash : ctor;
 					alter.IsStatic = true;
 					if (Parent != null && Parent.HasStaticCtor (alter.StaticName))

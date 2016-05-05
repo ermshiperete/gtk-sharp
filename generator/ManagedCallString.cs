@@ -22,20 +22,20 @@
 namespace GtkSharp.Generation {
 
 	using System;
-	using System.Collections;
+	using System.Collections.Generic;
 	using System.IO;
 
 	public class ManagedCallString {
 		
-		ArrayList parms = new ArrayList ();
-		ArrayList special = new ArrayList ();
+		IDictionary<Parameter, bool> parms = new Dictionary<Parameter, bool> ();
+		IList<Parameter> dispose_params = new List<Parameter> ();
 		string error_param = null;
 		string user_data_param = null;
 		string destroy_param = null;
 
-		public ManagedCallString (Parameters parms, bool drop_first)
+		public ManagedCallString (Parameters parms)
 		{
-			for (int i = drop_first ? 1 : 0; i < parms.Count; i ++) {
+			for (int i = 0; i < parms.Count; i ++) {
 				Parameter p = parms [i];
 				if (p.IsLength && i > 0 && parms [i-1].IsString) 
 					continue;
@@ -43,27 +43,31 @@ namespace GtkSharp.Generation {
 					user_data_param = parms[i+1].Name;
 					destroy_param = parms[i+2].Name;
 					i += 2;
-				} else if (p.IsUserData && parms.IsHidden (p)) {
+				} else if ((p.IsCount || p.IsUserData) && parms.IsHidden (p)) {
 					user_data_param = p.Name;
 					continue;
 				} else if (p is ErrorParameter) {
 					error_param = p.Name;
 					continue;
 				}
-				this.parms.Add (p);
 
+				bool special = false;
 				if (p.PassAs != String.Empty && (p.Name != p.FromNative (p.Name)))
-					this.special.Add (true);
+					special = true;
 				else if (p.Generatable is CallbackGen)
-					this.special.Add (true);
-				else
-					this.special.Add (false);
+					special = true;
+
+				this.parms.Add (p, special);
+
+				if (p.IsOwnable) {
+					dispose_params.Add (p);
+				}
 			}
 		}
 
 		public bool HasOutParam {
 			get {
-				foreach (Parameter p in parms) {
+				foreach (Parameter p in parms.Keys) {
 					if (p.PassAs == "out")
 						return true;
 				}
@@ -71,10 +75,18 @@ namespace GtkSharp.Generation {
 			}
 		}
 
+		public bool HasDisposeParam {
+			get { return dispose_params.Count > 0; }
+		}
+
 		public string Unconditional (string indent) {
 			string ret = "";
 			if (error_param != null)
 				ret = indent + error_param + " = IntPtr.Zero;\n";
+
+			foreach (Parameter p in dispose_params) {
+				ret += indent + p.CSType + " my" + p.Name + " = null;\n";
+			}
 			return ret;
 		}
 
@@ -82,11 +94,11 @@ namespace GtkSharp.Generation {
 		{
 			string ret = "";
 
-			for (int i = 0; i < parms.Count; i ++) {
-				if ((bool)special[i] == false)
+			foreach (Parameter p in parms.Keys) {
+				if (parms [p] == false) {
 					continue;
+				}
 
-				Parameter p = parms [i] as Parameter;
 				IGeneratable igen = p.Generatable;
 
 				if (igen is CallbackGen) {
@@ -104,6 +116,10 @@ namespace GtkSharp.Generation {
 				}
 			}
 
+			foreach (Parameter p in dispose_params) {
+				ret += indent + "my" + p.Name + " = " + p.FromNative (p.Name) + ";\n";
+			}
+
 			return ret;
 		}
 
@@ -114,13 +130,20 @@ namespace GtkSharp.Generation {
 
 			string[] result = new string [parms.Count];
 
-			for (int i = 0; i < parms.Count; i ++) {
-				Parameter p = parms [i] as Parameter;
+			int i = 0;
+			foreach (Parameter p in parms.Keys) {
 				result [i] = p.PassAs == "" ? "" : p.PassAs + " ";
-				if (p.Generatable is CallbackGen)
+				if (p.Generatable is CallbackGen) {
 					result [i] += p.Name + "_invoker.Handler";
-				else
-					result [i] += ((bool)special[i]) ? "my" + p.Name : p.FromNative (p.Name);
+				} else {
+					if (parms [p] || dispose_params.Contains(p)) {
+						// Parameter was declared and marshalled earlier
+						result [i] +=  "my" + p.Name;
+					} else {
+						result [i] +=  p.FromNative (p.Name);
+					}
+				}
+				i++;
 			}
 
 			return String.Join (", ", result);
@@ -130,19 +153,37 @@ namespace GtkSharp.Generation {
 		{
 			string ret = "";
 
-			for (int i = 0; i < parms.Count; i ++) {
-				if ((bool)special[i] == false)
+			foreach (Parameter p in parms.Keys) {
+				if (parms [p] == false) {
 					continue;
+				}
 
-				Parameter p = parms [i] as Parameter;
 				IGeneratable igen = p.Generatable;
 
 				if (igen is CallbackGen)
 					continue;
 				else if (igen is StructBase || igen is ByRefGen)
 					ret += indent + String.Format ("if ({0} != IntPtr.Zero) System.Runtime.InteropServices.Marshal.StructureToPtr (my{0}, {0}, false);\n", p.Name);
+				else if (igen is IManualMarshaler)
+					ret += String.Format ("{0}{1} = {2};", indent, p.Name, (igen as IManualMarshaler).AllocNative ("my" + p.Name));
 				else
-					ret += indent + p.Name + " = " + igen.ToNativeReturn ("my" + p.Name) + ";\n";
+					ret += indent + p.Name + " = " + igen.CallByName ("my" + p.Name) + ";\n";
+			}
+
+			return ret;
+		}
+
+		public string DisposeParams (string indent)
+		{
+			string ret = "";
+
+			foreach (Parameter p in dispose_params) {
+				string name = "my" + p.Name;
+				string disp_name = "disposable_" + p.Name;
+
+				ret += indent + "var " + disp_name + " = " + name + " as IDisposable;\n";
+				ret += indent + "if (" + disp_name + " != null)\n";
+				ret += indent + "\t" + disp_name + ".Dispose ();\n";
 			}
 
 			return ret;

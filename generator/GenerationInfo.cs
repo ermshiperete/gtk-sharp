@@ -29,7 +29,6 @@ namespace GtkSharp.Generation {
 	public class GenerationInfo {
 		
 		string dir;
-		string custom_dir;
 		string assembly_name;
 		string gluelib_name;
 		bool glue_enabled;
@@ -41,16 +40,14 @@ namespace GtkSharp.Generation {
 			string ns_name = ns.GetAttribute ("name");
 			char sep = Path.DirectorySeparatorChar;
 			dir = ".." + sep + ns_name.ToLower () + sep + "generated";
-			custom_dir = ".." + sep + ns_name.ToLower ();
 			assembly_name = ns_name.ToLower () + "-sharp";
 		}
 
-		public GenerationInfo (string dir, string assembly_name) : this (dir, dir, assembly_name, "", "", "") {}
+		public GenerationInfo (string dir, string assembly_name) : this (dir, assembly_name, "", "", "") {}
 
-		public GenerationInfo (string dir, string custom_dir, string assembly_name, string glue_filename, string glue_includes, string gluelib_name)
+		public GenerationInfo (string dir, string assembly_name, string glue_filename, string glue_includes, string gluelib_name)
 		{
 			this.dir = dir;
-			this.custom_dir = custom_dir;
 			this.assembly_name = assembly_name;
 			this.gluelib_name = gluelib_name;
 			InitializeGlue (glue_filename, glue_includes, gluelib_name);
@@ -80,18 +77,6 @@ namespace GtkSharp.Generation {
 					}
 					glue_sw.WriteLine ("");
 				}
-				glue_sw.WriteLine ("const gchar *__prefix = \"__gtksharp_\";\n");
-				glue_sw.WriteLine ("#define HAS_PREFIX(a) (*((guint64 *)(a)) == *((guint64 *) __prefix))\n");
-				glue_sw.WriteLine ("static GObjectClass *");
-				glue_sw.WriteLine ("get_threshold_class (GObject *obj)");
-				glue_sw.WriteLine ("{");
-				glue_sw.WriteLine ("\tGType gtype = G_TYPE_FROM_INSTANCE (obj);");
-				glue_sw.WriteLine ("\twhile (HAS_PREFIX (g_type_name (gtype)))");
-				glue_sw.WriteLine ("\t\tgtype = g_type_parent (gtype);");
-				glue_sw.WriteLine ("\tGObjectClass *klass = g_type_class_peek (gtype);");
-				glue_sw.WriteLine ("\tif (klass == NULL) klass = g_type_class_ref (gtype);");
-				glue_sw.WriteLine ("\treturn klass;");
-				glue_sw.WriteLine ("}\n");
 				glue_enabled = true;
 			}
 		}
@@ -99,12 +84,6 @@ namespace GtkSharp.Generation {
 		public string AssemblyName {
 			get {
 				return assembly_name;
-			}
-		}
-
-		public string CustomDir {
-			get {
-				return custom_dir;
 			}
 		}
 
@@ -167,12 +146,12 @@ namespace GtkSharp.Generation {
 			}
 		}
 
-		public StreamWriter OpenStream (string name) 
+		public StreamWriter OpenStream (string name, string namespce)
 		{
-			char sep = Path.DirectorySeparatorChar;
-			if (!Directory.Exists(dir))
-				Directory.CreateDirectory(dir);
-			string filename = dir + sep + name + ".cs";
+			string gen_dir = Path.Combine (dir, namespce);
+			Directory.CreateDirectory (gen_dir);
+
+			string filename = Path.Combine (gen_dir, name + ".cs");
 			
 			FileStream stream = new FileStream (filename, FileMode.Create, FileAccess.Write);
 			StreamWriter sw = new StreamWriter (stream);

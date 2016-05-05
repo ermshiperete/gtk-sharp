@@ -31,10 +31,11 @@ namespace GtkSharp.Generation {
 
 		public Property (XmlElement elem, ClassBase container_type) : base (elem, container_type) {}
 
-		public bool Validate ()
+		public bool Validate (LogWriter log)
 		{
 			if (CSType == "" && !Hidden) {
-				Console.Write("Property has unknown Type {0} ", CType);
+				log.Member = Name;
+				log.Warn ("property has unknown type '{0}' ", CType);
 				Statistics.ThrottledCount++;
 				return false;
 			}
@@ -44,22 +45,21 @@ namespace GtkSharp.Generation {
 
 		bool Readable {
 			get {
-				return elem.GetAttribute ("readable") == "true";
+				return elem.GetAttributeAsBoolean ("readable");
 			}
 		}
 
 		bool Writable {
 			get {
-				return elem.GetAttribute ("writeable") == "true" &&
-					!elem.HasAttribute ("construct-only");
+				return elem.GetAttributeAsBoolean ("writeable") &&
+					!elem.GetAttributeAsBoolean ("construct-only");
 			}
 		}
 
 		bool IsDeprecated {
 			get {
 				return !container_type.IsDeprecated &&
-					(elem.GetAttribute ("deprecated") == "1" ||
-					 elem.GetAttribute ("deprecated") == "true");
+					elem.GetAttributeAsBoolean ("deprecated");
 			}
 		}
 
@@ -144,8 +144,11 @@ namespace GtkSharp.Generation {
 				if (table.IsOpaque (CType) || table.IsBoxed (CType)) {
 					sw.WriteLine(indent + "\t" + CSType + " ret = (" + CSType + ") val;");
 				} else if (table.IsInterface (CType)) {
+					var igen = table.GetInterfaceGen (CType);
+
 					// Do we have to dispose the GLib.Object from the GLib.Value?
-					sw.WriteLine (indent + "\t{0} ret = {0}Adapter.GetObject ((GLib.Object) val);", CSType);
+					sw.WriteLine (indent + "\t{0} ret = {1}.GetObject ((GLib.Object) val);",
+					              igen.QualifiedName, igen.QualifiedAdapterName);
 				} else {
 					sw.Write(indent + "\t" + CSType + " ret = ");
 					sw.Write ("(" + CSType + ") ");

@@ -23,26 +23,28 @@
 namespace GtkSharp.Generation {
 
 	using System;
-	using System.Collections;
+	using System.Collections.Generic;
 	using System.IO;
 	using System.Text;
 	using System.Xml;
 
 	public class ObjectGen : ObjectBase  {
 
-		private ArrayList custom_attrs = new ArrayList();
-		private ArrayList strings = new ArrayList();
-		private ArrayList vm_nodes = new ArrayList();
-		private Hashtable childprops = new Hashtable();
-		private static Hashtable dirs = new Hashtable ();
+		private IList<string> custom_attrs = new List<string> ();
+		private IList<XmlElement> strings = new List<XmlElement> ();
+		private IDictionary<string, ChildProperty> childprops = new Dictionary<string, ChildProperty> ();
+		private static IDictionary<string, DirectoryInfo> dirs = new Dictionary<string, DirectoryInfo> ();
 
-		public ObjectGen (XmlElement ns, XmlElement elem) : base (ns, elem) 
+		public ObjectGen (XmlElement ns, XmlElement elem) : base (ns, elem, false)
 		{
 			foreach (XmlNode node in elem.ChildNodes) {
-				string name;
+				XmlElement member = node as XmlElement;
+				if (member == null) {
+					continue;
+				}
 
-				if (!(node is XmlElement)) continue;
-				XmlElement member = (XmlElement) node;
+				if (member.GetAttributeAsBoolean ("hidden"))
+					continue;
 
 				switch (node.Name) {
 				case "callback":
@@ -53,16 +55,12 @@ namespace GtkSharp.Generation {
 					custom_attrs.Add (member.InnerXml);
 					break;
 
-				case "virtual_method":
-					Statistics.IgnoreCount++;
-					break;
-
 				case "static-string":
-					strings.Add (node);
+					strings.Add (member);
 					break;
 
 				case "childprop":
-					name = member.GetAttribute ("name");
+					string name = member.GetAttribute ("name");
 					while (childprops.ContainsKey (name))
 						name += "mangled";
 					childprops.Add (name, new ChildProperty (member, this));
@@ -76,41 +74,41 @@ namespace GtkSharp.Generation {
 			}
 		}
 
+		public override string CallByName (string var, bool owned)
+		{
+			return String.Format ("{0} == null ? IntPtr.Zero : {0}.{1}", var, owned ? "OwnedHandle" : "Handle");
+		}
+
 		public override bool Validate ()
 		{
-			ArrayList invalids = new ArrayList ();
+			LogWriter log = new LogWriter (QualifiedName);
 
-			foreach (ChildProperty prop in childprops.Values) {
-				if (!prop.Validate ()) {
-					Console.WriteLine ("in Object " + QualifiedName);
-					invalids.Add (prop);
-				}
+			var invalids = new List<string> ();
+
+			foreach (string prop_name in childprops.Keys) {
+				if (!childprops [prop_name].Validate (log))
+					invalids.Add (prop_name);
 			}
-			foreach (ChildProperty prop in invalids)
-				childprops.Remove (prop);
+			foreach (string prop_name in invalids)
+				childprops.Remove (prop_name);
 
 			return base.Validate ();
 		}
 
 		private bool DisableVoidCtor {
 			get {
-				return Elem.HasAttribute ("disable_void_ctor");
-			}
-		}
-
-		private bool DisableGTypeCtor {
-			get {
-				return Elem.HasAttribute ("disable_gtype_ctor");
+				return Elem.GetAttributeAsBoolean ("disable_void_ctor");
 			}
 		}
 
 		private class DirectoryInfo {
 			public string assembly_name;
-			public Hashtable objects;
+			public IDictionary<string, string> objects;
 
-			public DirectoryInfo (string assembly_name) {
+			public DirectoryInfo (string assembly_name)
+			{
 				this.assembly_name = assembly_name;
-				objects = new Hashtable ();
+				objects = new Dictionary<string, string> ();
 			}
 		}
 
@@ -119,7 +117,7 @@ namespace GtkSharp.Generation {
 			DirectoryInfo result;
 
 			if (dirs.ContainsKey (dir)) {
-				result = dirs [dir] as DirectoryInfo;
+				result = dirs [dir];
 				if  (result.assembly_name != assembly_name) {
 					Console.WriteLine ("Can't put multiple assemblies in one directory.");
 					return null;
@@ -136,17 +134,18 @@ namespace GtkSharp.Generation {
 
 		public override void Generate (GenerationInfo gen_info)
 		{
-			gen_info.CurrentType = Name;
+			gen_info.CurrentType = QualifiedName;
 
 			string asm_name = gen_info.AssemblyName.Length == 0 ? NS.ToLower () + "-sharp" : gen_info.AssemblyName;
 			DirectoryInfo di = GetDirectoryInfo (gen_info.Dir, asm_name);
 
-			StreamWriter sw = gen_info.Writer = gen_info.OpenStream (Name);
+			StreamWriter sw = gen_info.Writer = gen_info.OpenStream (Name, NS);
 
 			sw.WriteLine ("namespace " + NS + " {");
 			sw.WriteLine ();
 			sw.WriteLine ("\tusing System;");
 			sw.WriteLine ("\tusing System.Collections;");
+			sw.WriteLine ("\tusing System.Collections.Generic;");
 			sw.WriteLine ("\tusing System.Runtime.InteropServices;");
 			sw.WriteLine ();
 
@@ -157,7 +156,7 @@ namespace GtkSharp.Generation {
 				sw.WriteLine ("\t[Obsolete]");
 			foreach (string attr in custom_attrs)
 				sw.WriteLine ("\t" + attr);
-			sw.Write ("\t{0} {1}class " + Name, IsInternal ? "internal" : "public", IsAbstract ? "abstract " : "");
+			sw.Write ("\t{0} {1}partial class " + Name, IsInternal ? "internal" : "public", IsAbstract ? "abstract " : "");
 			string cs_parent = table.GetCSType(Elem.GetAttribute("parent"));
 			if (cs_parent != "") {
 				di.objects.Add (CName, QualifiedName);
@@ -184,7 +183,7 @@ namespace GtkSharp.Generation {
 			bool has_sigs = (sigs != null && sigs.Count > 0);
 			if (!has_sigs) {
 				foreach (string iface in interfaces) {
-					ClassBase igen = table.GetClassGen (iface);
+					InterfaceGen igen = table.GetClassGen (iface) as InterfaceGen;
 					if (igen != null && igen.Signals != null) {
 						has_sigs = true;
 						break;
@@ -196,26 +195,27 @@ namespace GtkSharp.Generation {
 				GenSignals (gen_info, null);
 			}
 
-			if (vm_nodes.Count > 0) {
-				if (gen_info.GlueEnabled) {
-					GenVirtualMethods (gen_info);
-				} else {
-					Statistics.VMIgnored = true;
-					Statistics.ThrottledCount += vm_nodes.Count;
-				}
-			}
-
+			GenConstants (gen_info);
+			GenClassMembers (gen_info, cs_parent);
 			GenMethods (gen_info, null, null);
-			
+
 			if (interfaces.Count != 0) {
-				Hashtable all_methods = new Hashtable ();
-				foreach (Method m in Methods.Values)
+				var all_methods = new Dictionary<string, Method> ();
+				foreach (Method m in Methods.Values) {
 					all_methods[m.Name] = m;
-				Hashtable collisions = new Hashtable ();
+				}
+				var collisions = new Dictionary<string, bool> ();
 				foreach (string iface in interfaces) {
 					ClassBase igen = table.GetClassGen (iface);
 					foreach (Method m in igen.Methods.Values) {
-						Method collision = all_methods[m.Name] as Method;
+						if (m.Name.StartsWith ("Get") || m.Name.StartsWith ("Set")) {
+							if (GetProperty (m.Name.Substring (3)) != null) {
+								collisions[m.Name] = true;
+								continue;
+							}
+						}
+						Method collision = null;
+						all_methods.TryGetValue (m.Name, out collision);
 						if (collision != null && collision.Signature.Types == m.Signature.Types)
 							collisions[m.Name] = true;
 						else
@@ -226,10 +226,11 @@ namespace GtkSharp.Generation {
 				foreach (string iface in interfaces) {
 					if (Parent != null && Parent.Implements (iface))
 						continue;
-					ClassBase igen = table.GetClassGen (iface);
+					InterfaceGen igen = table.GetClassGen (iface) as InterfaceGen;
 					igen.GenMethods (gen_info, collisions, this);
 					igen.GenProperties (gen_info, this);
 					igen.GenSignals (gen_info, this);
+					igen.GenVirtualMethods (gen_info, this);
 				}
 			}
 
@@ -247,7 +248,6 @@ namespace GtkSharp.Generation {
 			}
 
 			sw.WriteLine ("#endregion");
-			AppendCustom (sw, gen_info.CustomDir);
 
 			sw.WriteLine ("\t}");
 			sw.WriteLine ("}");
@@ -261,12 +261,9 @@ namespace GtkSharp.Generation {
 		{
 			if (!Elem.HasAttribute("parent"))
 				return;
+			string defaultconstructoraccess = Elem.HasAttribute ("defaultconstructoraccess") ? Elem.GetAttribute ("defaultconstructoraccess") : "public";
 
-			if (!DisableGTypeCtor) {
-				gen_info.Writer.WriteLine("\t\t[Obsolete]");
-				gen_info.Writer.WriteLine("\t\tprotected " + Name + "(GLib.GType gtype) : base(gtype) {}");
-			}
-			gen_info.Writer.WriteLine("\t\tpublic " + Name + "(IntPtr raw) : base(raw) {}");
+			gen_info.Writer.WriteLine ("\t\t"+ defaultconstructoraccess + " " + Name + " (IntPtr raw) : base(raw) {}");
 			if (ctors.Count == 0 && !DisableVoidCtor) {
 				gen_info.Writer.WriteLine();
 				gen_info.Writer.WriteLine("\t\tprotected " + Name + "() : base(IntPtr.Zero)");
@@ -310,37 +307,41 @@ namespace GtkSharp.Generation {
 			
 		}
 
-		private void GenVMGlue (GenerationInfo gen_info, XmlElement elem)
+		void GenClassMembers (GenerationInfo gen_info, string cs_parent)
 		{
-			StreamWriter sw = gen_info.GlueWriter;
+			GenVirtualMethods (gen_info, null);
 
-			string vm_name = elem.GetAttribute ("cname");
-			string method = gen_info.GluelibName + "_" + NS + Name + "_override_" + vm_name;
+			if (class_struct_name == null || !CanGenerateClassStruct) return;
+			StreamWriter sw = gen_info.Writer;
+			GenerateClassStruct (gen_info);
+			if (cs_parent == "")
+				sw.WriteLine ("\t\tstatic uint class_offset = 0;");
+			else
+				sw.WriteLine ("\t\tstatic uint class_offset = ((GLib.GType) typeof ({0})).GetClassSize ();", cs_parent);
+			sw.WriteLine ("\t\tstatic Dictionary<GLib.GType, {0}> class_structs;", class_struct_name);
 			sw.WriteLine ();
-			sw.WriteLine ("void " + method + " (GType type, gpointer cb);");
+			sw.WriteLine ("\t\tstatic {0} GetClassStruct (GLib.GType gtype, bool use_cache)", class_struct_name);
+			sw.WriteLine ("\t\t{");
+			sw.WriteLine ("\t\t\tif (class_structs == null)");
+			sw.WriteLine ("\t\t\t\tclass_structs = new Dictionary<GLib.GType, {0}> ();", class_struct_name);
 			sw.WriteLine ();
-			sw.WriteLine ("void");
-			sw.WriteLine (method + " (GType type, gpointer cb)");
-			sw.WriteLine ("{");
-			sw.WriteLine ("\t{0} *klass = ({0} *) g_type_class_peek (type);", NS + Name + "Class");
-			sw.WriteLine ("\tklass->" + vm_name + " = cb;");
-			sw.WriteLine ("}");
-		}
-
-		static bool vmhdrs_needed = true;
-
-		private void GenVirtualMethods (GenerationInfo gen_info)
-		{
-			if (vmhdrs_needed) {
-				gen_info.GlueWriter.WriteLine ("#include <glib-object.h>");
-				gen_info.GlueWriter.WriteLine ("#include \"vmglueheaders.h\"");
-				gen_info.GlueWriter.WriteLine ();
-				vmhdrs_needed = false;
-			}
-
-			foreach (XmlElement elem in vm_nodes) {
-				GenVMGlue (gen_info, elem);
-			}
+			sw.WriteLine ("\t\t\tif (use_cache && class_structs.ContainsKey (gtype))");
+			sw.WriteLine ("\t\t\t\treturn class_structs [gtype];");
+			sw.WriteLine ("\t\t\telse {");
+			sw.WriteLine ("\t\t\t\tIntPtr class_ptr = new IntPtr (gtype.GetClassPtr ().ToInt64 () + class_offset);");
+			sw.WriteLine ("\t\t\t\t{0} class_struct = ({0}) Marshal.PtrToStructure (class_ptr, typeof ({0}));", class_struct_name);
+			sw.WriteLine ("\t\t\t\tif (use_cache)");
+			sw.WriteLine ("\t\t\t\t\tclass_structs.Add (gtype, class_struct);");
+			sw.WriteLine ("\t\t\t\treturn class_struct;");
+			sw.WriteLine ("\t\t\t}");
+			sw.WriteLine ("\t\t}");
+			sw.WriteLine ();
+			sw.WriteLine ("\t\tstatic void OverrideClassStruct (GLib.GType gtype, {0} class_struct)", class_struct_name);
+			sw.WriteLine ("\t\t{");
+			sw.WriteLine ("\t\t\tIntPtr class_ptr = new IntPtr (gtype.GetClassPtr ().ToInt64 () + class_offset);");
+			sw.WriteLine ("\t\t\tMarshal.StructureToPtr (class_struct, class_ptr, false);");
+			sw.WriteLine ("\t\t}");
+			sw.WriteLine ();
 		}
 
 		/* Keep this in sync with the one in glib/GType.cs */
@@ -358,12 +359,14 @@ namespace GtkSharp.Generation {
 			throw new ArgumentException ("cname doesn't follow the NamespaceType capitalization style: " + cname);
 		}
 
-		private static bool NeedsMap (Hashtable objs, string assembly_name)
+		private static bool NeedsMap (IDictionary<string, string> objs, string assembly_name)
 		{
-			foreach (string key in objs.Keys)
-				if (GetExpected (key) != ((string) objs[key]))
+			foreach (string key in objs.Keys) {
+				if (GetExpected (key) != objs[key]) {
 					return true;
-			
+				}
+			}
+
 			return false;
 		}
 
@@ -382,7 +385,7 @@ namespace GtkSharp.Generation {
 		{
 			foreach (string dir in dirs.Keys) {
 
-				DirectoryInfo di = dirs[dir] as DirectoryInfo;
+				DirectoryInfo di = dirs[dir];
 
 				if (!NeedsMap (di.objects, di.assembly_name))
 					continue;
@@ -395,7 +398,7 @@ namespace GtkSharp.Generation {
 
 		private static void GenerateMapper (DirectoryInfo dir_info, GenerationInfo gen_info)
 		{
-			StreamWriter sw = gen_info.OpenStream ("ObjectManager");
+			StreamWriter sw = gen_info.OpenStream ("ObjectManager", "GtkSharp");
 
 			sw.WriteLine ("namespace GtkSharp." + Studlify (dir_info.assembly_name) + " {");
 			sw.WriteLine ();
@@ -411,8 +414,9 @@ namespace GtkSharp.Generation {
 			sw.WriteLine ("\t\t\tinitialized = true;");
 	
 			foreach (string key in dir_info.objects.Keys) {
-				if (GetExpected(key) != ((string) dir_info.objects[key]))
+				if (GetExpected(key) != dir_info.objects[key]) {
 					sw.WriteLine ("\t\t\tGLib.GType.Register ({0}.GType, typeof ({0}));", dir_info.objects [key]);
+				}
 			}
 					
 			sw.WriteLine ("\t\t}");

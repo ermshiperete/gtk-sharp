@@ -1,21 +1,19 @@
-if ENABLE_MONO_CAIRO
-local_mono_cairo=$(top_builddir)/cairo/Mono.Cairo.dll
-else
-local_mono_cairo=
-endif
-
 assemblies = \
-	$(top_builddir)/glib/glib-sharp.dll $(top_builddir)/pango/pango-sharp.dll \
-	$(top_builddir)/atk/atk-sharp.dll $(top_builddir)/gdk/gdk-sharp.dll \
-	$(top_builddir)/gtk/gtk-sharp.dll $(local_mono_cairo)
+	$(top_builddir)/glib/glib-sharp.dll 	\
+	$(top_builddir)/gio/gio-sharp.dll	\
+	$(top_builddir)/cairo/cairo-sharp.dll	\
+	$(top_builddir)/pango/pango-sharp.dll	\
+	$(top_builddir)/atk/atk-sharp.dll	\
+	$(top_builddir)/gdk/gdk-sharp.dll	\
+	$(top_builddir)/gtk/gtk-sharp.dll
 
-references = $(addprefix /r:, $(assemblies)) @MONO_CAIRO_LIBS@
+references = $(addprefix -r:, $(assemblies))
 TARGETS = GtkDemo.exe
 DEBUGS = $(addsuffix .mdb, $(TARGETS)) 
 CLEANFILES = $(TARGETS) $(DEBUGS)
 noinst_SCRIPTS = $(TARGETS)
 
-EXTRA_DIST = $(sources) $(image_names)
+EXTRA_DIST = $(sources) $(resource_files)
 
 sources = \
 	DemoApplicationWindow.cs	\
@@ -23,6 +21,7 @@ sources = \
 	DemoButtonBox.cs		\
 	DemoClipboard.cs		\
 	DemoColorSelection.cs	\
+	DemoCssBasics.cs		\
 	DemoDialog.cs			\
 	DemoDrawingArea.cs		\
 	DemoEditableCells.cs	\
@@ -38,13 +37,17 @@ sources = \
 	DemoPixbuf.cs			\
 	DemoRotatedText.cs		\
 	DemoSizeGroup.cs		\
+	DemoSpinner.cs			\
 	DemoStockBrowser.cs		\
 	DemoTextView.cs			\
+	DemoThemingStyleClasses.cs	\
 	DemoTreeStore.cs		\
 	DemoUIManager.cs		\
 	DemoPrinting.cs
 
-images = \
+resource_ids = \
+	css/css_basics.css,css_basics.css \
+	css/reset.css,reset.css \
 	images/gnome-foot.png,gnome-foot.png \
 	images/MonoIcon.png,MonoIcon.png \
 	images/gnome-calendar.png,gnome-calendar.png \
@@ -57,9 +60,12 @@ images = \
 	images/apple-red.png,apple-red.png \
 	images/background.jpg,background.jpg \
 	images/gtk-logo-rgb.gif,gtk-logo-rgb.gif \
-	images/floppybuddy.gif,floppybuddy.gif
+	images/floppybuddy.gif,floppybuddy.gif \
+	theming.ui,theming.ui
 
-image_names = \
+resource_files = \
+	css/css_basics.css \
+	css/reset.css \
 	images/gnome-foot.png \
 	images/MonoIcon.png \
 	images/gnome-calendar.png \
@@ -72,12 +78,13 @@ image_names = \
 	images/apple-red.png \
 	images/background.jpg \
 	images/gtk-logo-rgb.gif \
-	images/floppybuddy.gif
+	images/floppybuddy.gif \
+	theming.ui
 
 build_sources = $(addprefix $(srcdir)/, $(sources))
-build_images = $(addprefix $(srcdir)/, $(images))
-resources = $(addprefix /resource:, $(build_sources), $(build_images))
+build_resources = $(addprefix $(srcdir)/, $(resource_ids))
+resources = $(addprefix -resource:, $(build_sources), $(build_resources))
 
 GtkDemo.exe: $(build_sources) $(assemblies)
-	$(CSC) $(CSFLAGS) /out:GtkDemo.exe $(build_sources) $(references) $(resources)
+	$(CSC) $(CSFLAGS) -out:GtkDemo.exe $(build_sources) $(references) $(resources)
 

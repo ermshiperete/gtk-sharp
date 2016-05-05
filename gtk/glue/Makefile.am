@@ -1,32 +1,24 @@
-lib_LTLIBRARIES = libgtksharpglue-2.la
+lib_LTLIBRARIES = libgtksharpglue-3.la
 
-libgtksharpglue_2_la_SOURCES =	\
-	adjustment.c		\
+libgtksharpglue_3_la_SOURCES =	\
 	cellrenderer.c		\
-	clipboard.c		\
-	colorseldialog.c	\
 	container.c		\
-	nodestore.c		\
-	object.c		\
-	selectiondata.c		\
-	statusicon.c		\
 	style.c			\
-	targetlist.c		\
 	vmglueheaders.h		\
 	widget.c
 
-nodist_libgtksharpglue_2_la_SOURCES = generated.c
+nodist_libgtksharpglue_3_la_SOURCES = generated.c
 
 # Adding a new glue file?
 
-libgtksharpglue_2_la_LDFLAGS = -module -avoid-version -no-undefined
+libgtksharpglue_3_la_LDFLAGS = -module -avoid-version -no-undefined
 
-libgtksharpglue_2_la_LIBADD = $(GTK_LIBS)
+libgtksharpglue_3_la_LIBADD = $(GTK_LIBS)
 
-INCLUDES = $(GTK_CFLAGS) $(GTK_SHARP_VERSION_CFLAGS) -I$(top_srcdir)
+AM_CPPFLAGS = $(GTK_CFLAGS) $(GTK_SHARP_VERSION_CFLAGS) -I$(top_srcdir)
 
-libgtksharpglue.dll: $(libgtksharpglue_2_la_OBJECTS) libgtksharpglue.rc libgtksharpglue.def
-	./build-dll libgtksharpglue-2 $(VERSION)
+libgtksharpglue.dll: $(libgtksharpglue_3_la_OBJECTS) libgtksharpglue.rc libgtksharpglue.def
+	./build-dll libgtksharpglue-3 $(VERSION)
 
 CLEANFILES = lib*.a lib*.dll
 

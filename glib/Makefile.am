@@ -1,15 +1,17 @@
-SUBDIRS = glue
+SUBDIRS =
 
+SNK = $(top_srcdir)/gtk-sharp.snk
 TARGET = $(ASSEMBLY)
 ASSEMBLY = $(ASSEMBLY_NAME).dll
 ASSEMBLY_NAME = glib-sharp
+ASSEMBLY_NAME_VERSION = $(ASSEMBLY_NAME),Version=$(API_VERSION)
 noinst_DATA = $(ASSEMBLY) $(ASSEMBLY).config $(POLICY_ASSEMBLIES)
 pkgconfigdir = $(libdir)/pkgconfig
-pkgconfig_DATA = glib-sharp-2.0.pc
-gapidir = $(datadir)/gapi-2.0
+pkgconfig_DATA = glib-sharp-3.0.pc
+gapidir = $(datadir)/gapi-3.0
 gapi_DATA = glib-api.xml
 
-CLEANFILES = $(ASSEMBLY) $(ASSEMBLY).mdb gtk-sharp.snk AssemblyInfo.cs $(POLICY_ASSEMBLIES) $(POLICY_CONFIGS)
+CLEANFILES = $(ASSEMBLY) $(ASSEMBLY).mdb $(POLICY_ASSEMBLIES) $(POLICY_CONFIGS)
 DISTCLEANFILES = $(ASSEMBLY).config
 
 POLICY_ASSEMBLIES = $(addsuffix .$(ASSEMBLY), $(addprefix policy., $(POLICY_VERSIONS)))
@@ -17,31 +19,37 @@ POLICY_CONFIGS = $(addsuffix .config, $(addprefix policy., $(POLICY_VERSIONS)))
 
 references = 
 
+# TODO: auto-generate at compile time the following classes:
+#  Cond, Date, DateTime, Mutex, PollFD, RecMutex, (half)Source,
+#  SourceCallbackFuncs, SourceDummyMarshal, SourceFunc,
+#  SourceFuncNative, SourceFuncs, TimeVal, TimeZone
+# (to do that, we need to fill missing pieces in glib's
+#  gobject-introspection metadata upstream)
+
 sources =		 			\
 	Argv.cs					\
-	Boxed.cs				\
-	CDeclCallbackAttribute.cs		\
-	ClassInitializerAttribute.cs		\
+	Bytes.cs				\
 	ConnectBeforeAttribute.cs		\
+	Cond.cs					\
+	Date.cs					\
+	DateTime.cs				\
 	DefaultSignalHandlerAttribute.cs	\
-	DelegateWrapper.cs			\
 	DestroyNotify.cs			\
-	EnumWrapper.cs				\
 	ExceptionManager.cs			\
 	FileUtils.cs				\
-	Format.cs				\
 	GException.cs				\
 	GInterfaceAdapter.cs			\
 	GInterfaceAttribute.cs			\
+	GLibSynchronizationContext.cs		\
 	Global.cs				\
 	GString.cs				\
 	GType.cs				\
 	GTypeAttribute.cs			\
 	Idle.cs					\
-	IgnoreClassInitializersAttribute.cs	\
 	InitiallyUnowned.cs			\
 	IOChannel.cs				\
 	IWrapper.cs				\
+	KeyFile.cs				\
 	ListBase.cs				\
 	List.cs					\
 	Log.cs					\
@@ -51,82 +59,81 @@ sources =		 			\
 	Markup.cs				\
 	Marshaller.cs				\
 	MissingIntPtrCtorException.cs		\
+	Mutex.cs				\
 	NotifyHandler.cs			\
 	Object.cs				\
 	ObjectManager.cs			\
 	Opaque.cs				\
+	ParamSpec.cs				\
+	PollFD.cs				\
+	Priority.cs				\
 	PropertyAttribute.cs			\
 	PtrArray.cs				\
+	RecMutex.cs				\
 	Signal.cs				\
 	SignalArgs.cs				\
 	SignalAttribute.cs			\
-	SignalCallback.cs			\
 	SignalClosure.cs			\
 	SList.cs				\
 	Source.cs				\
+	SourceFunc.cs				\
+	SourceFuncs.cs				\
+	SourceDummyMarshal.cs			\
+	GLibSharp.SourceFuncNative.cs		\
+	GLibSharp.SourceDummyMarshalNative.cs	\
+	SourceCallbackFuncs.cs			\
 	Spawn.cs				\
 	Thread.cs				\
 	Timeout.cs				\
+	TimeVal.cs				\
+	TimeZone.cs				\
 	ToggleRef.cs				\
-	TypeConverter.cs			\
 	TypeFundamentals.cs			\
 	TypeInitializerAttribute.cs		\
-	UnwrappedObject.cs			\
 	ValueArray.cs				\
-	Value.cs
+	Value.cs				\
+	Variant.cs				\
+	VariantType.cs
 
-build_sources = $(addprefix $(srcdir)/, $(sources)) AssemblyInfo.cs
+build_sources = $(addprefix $(srcdir)/, $(sources))
 dist_sources = $(sources)
 
 EXTRA_DIST =				\
 	$(dist_sources)			\
 	$(ASSEMBLY).config.in		\
-	glib-sharp-2.0.pc.in		\
+	glib-sharp-3.0.pc.in		\
 	glib-api.xml
 
-gtk-sharp.snk: $(top_srcdir)/gtk-sharp.snk
-	cp $(top_srcdir)/gtk-sharp.snk .
-
-AssemblyInfo.cs: $(top_builddir)/AssemblyInfo.cs
-	cp $(top_builddir)/AssemblyInfo.cs .
-
-if PLATFORM_WIN32
-GAPI_CDECL_INSERT=$(top_srcdir)/gapi-cdecl-insert --keyfile=gtk-sharp.snk $(ASSEMBLY)
-else
-GAPI_CDECL_INSERT=
-endif
-
-$(ASSEMBLY): $(build_sources) gtk-sharp.snk AssemblyInfo.cs
+$(ASSEMBLY): $(build_sources) $(SNK)
 	@rm -f $(ASSEMBLY).mdb
-	$(CSC) $(CSFLAGS) -nowarn:0169,0612,0618 -out:$(ASSEMBLY) -target:library $(references) $(build_sources)
-	$(GAPI_CDECL_INSERT)
+	$(CSC) $(CSFLAGS) -keyfile:$(SNK) -unsafe -out:$(ASSEMBLY) -target:library $(references) $(build_sources) $(top_builddir)$(ASSEMBLYINFO)
 
 policy.%.config: $(top_builddir)/policy.config
 	sed -e "s/@ASSEMBLY_NAME@/$(ASSEMBLY_NAME)/" -e "s/@POLICY@/$*/" $(top_builddir)/policy.config > $@
 
-$(POLICY_ASSEMBLIES) : policy.%.$(ASSEMBLY): policy.%.config gtk-sharp.snk
-	$(AL) -link:policy.$*.config -out:$@ -keyfile:gtk-sharp.snk
+$(POLICY_ASSEMBLIES) : policy.%.$(ASSEMBLY): policy.%.config $(SNK)
+	$(AL) -link:policy.$*.config -out:$@ -keyfile:$(SNK)
 
 install-data-local:
 	@if test -n '$(TARGET)'; then							\
-	  echo "$(GACUTIL) /i $(ASSEMBLY) /f $(GACUTIL_FLAGS)";				\
-	  $(GACUTIL) /i $(ASSEMBLY) /f $(GACUTIL_FLAGS) || exit 1;			\
+	  echo "$(GACUTIL) -i $(ASSEMBLY) -f $(GACUTIL_FLAGS)";				\
+	  "$(GACUTIL)" -i $(ASSEMBLY) -f $(GACUTIL_FLAGS) || exit 1;			\
 	  if test -n '$(POLICY_VERSIONS)'; then						\
 	    for i in $(POLICY_VERSIONS); do						\
-	      echo "$(GACUTIL) /i policy.$$i.$(ASSEMBLY) /f $(GACUTIL_FLAGS)";		\
-	      $(GACUTIL) /i policy.$$i.$(ASSEMBLY) /f $(GACUTIL_FLAGS) || exit 1;	\
+	      echo "$(GACUTIL) -i policy.$$i.$(ASSEMBLY) -f $(GACUTIL_FLAGS)";		\
+	      "$(GACUTIL)" -i policy.$$i.$(ASSEMBLY) -f $(GACUTIL_FLAGS) || exit 1;	\
 	    done									\
 	  fi										\
 	fi
 
 uninstall-local:
 	@if test -n '$(TARGET)'; then							\
-	  echo "$(GACUTIL) /u $(ASSEMBLY_NAME) $(GACUTIL_FLAGS)";			\
-	  $(GACUTIL) /u $(ASSEMBLY_NAME) $(GACUTIL_FLAGS) || exit 1;			\
+	  echo "$(GACUTIL) -u $(ASSEMBLY_NAME_VERSION) $(GACUTIL_FLAGS)";		\
+	  "$(GACUTIL)" -u $(ASSEMBLY_NAME_VERSION) $(GACUTIL_FLAGS) || exit 1;		\
 	  if test -n '$(POLICY_VERSIONS)'; then						\
 	    for i in $(POLICY_VERSIONS); do						\
-	      echo "$(GACUTIL) /u policy.$$i.$(ASSEMBLY_NAME) $(GACUTIL_FLAGS)";	\
-	      $(GACUTIL) /u policy.$$i.$(ASSEMBLY_NAME) $(GACUTIL_FLAGS) || exit 1;	\
+	      echo "$(GACUTIL) -u policy.$$i.$(ASSEMBLY_NAME) $(GACUTIL_FLAGS)";	\
+	      "$(GACUTIL)" -u policy.$$i.$(ASSEMBLY_NAME) $(GACUTIL_FLAGS) || exit 1;	\
 	    done									\
 	  fi										\
 	fi

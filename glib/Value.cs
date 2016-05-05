@@ -23,7 +23,6 @@
 namespace GLib {
 
 	using System;
-	using System.Collections;
 	using System.Reflection;
 	using System.Runtime.InteropServices;
 
@@ -31,22 +30,24 @@ namespace GLib {
 	public struct Value : IDisposable {
 
 		IntPtr type;
-		long pad_1;
-		long pad_2;
+#pragma warning disable 0414
+		long pad1;
+		long pad2;
+#pragma warning restore 0414
 
 		public static Value Empty;
 
 		public Value (GLib.GType gtype)
 		{
 			type = IntPtr.Zero;
-			pad_1 = pad_2 = 0;
+			pad1 = pad2 = 0;
 			g_value_init (ref this, gtype.Val);
 		}
 
 		public Value (object obj)
 		{
 			type = IntPtr.Zero;
-			pad_1 = pad_2 = 0;
+			pad1 = pad2 = 0;
 
 			GType gtype = (GType) obj.GetType ();
 			g_value_init (ref this, gtype.Val);
@@ -93,20 +94,6 @@ namespace GLib {
 			g_value_set_uint64 (ref this, val);
 		}
 
-		[Obsolete ("Replaced by Value(object) constructor")]
-		public Value (EnumWrapper wrap, string type_name)
-		{
-			type = IntPtr.Zero;
-			pad_1 = pad_2 = 0;
-			IntPtr native = GLib.Marshaller.StringToPtrGStrdup (type_name);
-			gtksharp_value_create_from_type_name (ref this, native);
-			GLib.Marshaller.Free (native);
-			if (wrap.flags)
-				g_value_set_flags (ref this, (uint) (int) wrap); 
-			else
-				g_value_set_enum (ref this, (int) wrap); 
-		}
-
 		public Value (float val) : this (GType.Float)
 		{
 			g_value_set_float (ref this, val);
@@ -124,18 +111,26 @@ namespace GLib {
 			GLib.Marshaller.Free (native_val);
 		}
 
+		public Value (ValueArray val) : this (ValueArray.GType)
+		{
+			g_value_set_boxed (ref this, val.Handle);
+		}
+
 		public Value (IntPtr val) : this (GType.Pointer)
 		{
 			g_value_set_pointer (ref this, val); 
 		}
 
+		public Value (Variant variant) : this (GType.Variant)
+		{
+			g_value_set_variant (ref this, variant == null ? IntPtr.Zero : variant.Handle);
+		}
+
 		public Value (Opaque val, string type_name)
 		{
 			type = IntPtr.Zero;
-			pad_1 = pad_2 = 0;
-			IntPtr native = GLib.Marshaller.StringToPtrGStrdup (type_name);
-			gtksharp_value_create_from_type_name (ref this, native);
-			GLib.Marshaller.Free (native);
+			pad1 = pad2 = 0;
+			g_value_init (ref this, GType.FromName (type_name).Val);
 			g_value_set_boxed (ref this, val.Handle);
 		}
 
@@ -144,7 +139,7 @@ namespace GLib {
 			g_value_set_object (ref this, val == null ? IntPtr.Zero : val.Handle);
 		}
 
-		public Value (GLib.GInterfaceAdapter val) : this (val == null ? GType.Object : val.GType)
+		public Value (GLib.GInterfaceAdapter val) : this (val == null ? GType.Object : val.GInterfaceGType)
 		{
 			g_value_set_object (ref this, val == null ? IntPtr.Zero : val.Handle);
 		}
@@ -152,34 +147,16 @@ namespace GLib {
 		public Value (GLib.Object obj, string prop_name)
 		{
 			type = IntPtr.Zero;
-			pad_1 = pad_2 = 0;
-			IntPtr prop = GLib.Marshaller.StringToPtrGStrdup (prop_name);
-			gtksharp_value_create_from_property (ref this, obj.Handle, prop);
-			GLib.Marshaller.Free (prop);
-		}
-
-		[Obsolete]
-		public Value (GLib.Object obj, string prop_name, EnumWrapper wrap)
-		{
-			type = IntPtr.Zero;
-			pad_1 = pad_2 = 0;
-			IntPtr native = GLib.Marshaller.StringToPtrGStrdup (prop_name);
-			gtksharp_value_create_from_type_and_property (ref this, obj.NativeType.Val, native);
-			GLib.Marshaller.Free (native);
-			if (wrap.flags)
-				g_value_set_flags (ref this, (uint) (int) wrap); 
-			else
-				g_value_set_enum (ref this, (int) wrap); 
+			pad1 = pad2 = 0;
+			InitForProperty (obj, prop_name);
 		}
 
 		[Obsolete]
 		public Value (IntPtr obj, string prop_name, Opaque val)
 		{
 			type = IntPtr.Zero;
-			pad_1 = pad_2 = 0;
-			IntPtr native = GLib.Marshaller.StringToPtrGStrdup (prop_name);
-			gtksharp_value_create_from_property (ref this, obj, native);
-			GLib.Marshaller.Free (native);
+			pad1 = pad2 = 0;
+			InitForProperty (GLib.Object.GetObject (obj), prop_name);
 			g_value_set_boxed (ref this, val.Handle);
 		}
 
@@ -201,7 +178,6 @@ namespace GLib {
 				GLib.Marshaller.Free (Marshal.ReadIntPtr (native_array, i * IntPtr.Size));
 			Marshal.FreeHGlobal (native_array);
 		}
-
 
 		public void Dispose () 
 		{
@@ -246,26 +222,23 @@ namespace GLib {
 
 		public static explicit operator long (Value val)
 		{
-			return g_value_get_int64 (ref val);
+			if (val.type == GType.Long.Val)
+				return val.GetLongForPlatform ();
+			else
+				return g_value_get_int64 (ref val);
 		}
 
 		public static explicit operator ulong (Value val)
 		{
-			return g_value_get_uint64 (ref val);
-		}
-
-		[Obsolete ("Replaced by Enum cast")]
-		public static explicit operator EnumWrapper (Value val)
-		{
-			if (glibsharp_value_holds_flags (ref val))
-				return new EnumWrapper ((int)g_value_get_flags (ref val), true);
+			if (val.type == GType.ULong.Val)
+				return val.GetULongForPlatform ();
 			else
-				return new EnumWrapper (g_value_get_enum (ref val), false);
+				return g_value_get_uint64 (ref val);
 		}
 
 		public static explicit operator Enum (Value val)
 		{
-			if (glibsharp_value_holds_flags (ref val))
+			if (val.HoldsFlags)
 				return (Enum)Enum.ToObject (GType.LookupType (val.type), g_value_get_flags (ref val));
 			else
 				return (Enum)Enum.ToObject (GType.LookupType (val.type), g_value_get_enum (ref val));
@@ -287,6 +260,11 @@ namespace GLib {
 			return str == IntPtr.Zero ? null : GLib.Marshaller.Utf8PtrToString (str);
 		}
 
+		public static explicit operator ValueArray (Value val)
+		{
+			return new ValueArray (g_value_get_boxed (ref val));
+		}
+
 		public static explicit operator IntPtr (Value val)
 		{
 			return g_value_get_pointer (ref val);
@@ -297,20 +275,19 @@ namespace GLib {
 			return GLib.Opaque.GetOpaque (g_value_get_boxed (ref val), (Type) new GType (val.type), false);
 		}
 
-		public static explicit operator GLib.Boxed (Value val)
+		public static explicit operator GLib.Variant (Value Val)
 		{
-			return new GLib.Boxed (g_value_get_boxed (ref val));
+			return new Variant (g_value_get_variant (ref Val));
+		}
+
+		public static explicit operator GLib.VariantType (Value val)
+		{
+			return new VariantType (g_value_get_boxed (ref val));
 		}
 
 		public static explicit operator GLib.Object (Value val)
 		{
 			return GLib.Object.GetObject (g_value_get_object (ref val), false);
-		}
-
-		[Obsolete ("Replaced by GLib.Object cast")]
-		public static explicit operator GLib.UnwrappedObject (Value val)
-		{
-			return new UnwrappedObject (g_value_get_object (ref val));
 		}
 
 		public static explicit operator string[] (Value val)
@@ -328,20 +305,147 @@ namespace GLib {
 			return strings;
 		}
 
+		object ToRegisteredType () {
+			Type t = GLib.GType.LookupType (type);
+			ConstructorInfo ci = null;
+			
+			try {
+				while (ci == null && t != null) {
+					if (!t.IsAbstract)
+						ci = t.GetConstructor (new Type[] { typeof (GLib.Value) });
+					if (ci == null)
+						t = t.BaseType;
+				}
+			} catch (Exception) {
+				ci = null;
+			}
+
+			if (ci == null)
+				throw new Exception ("Unknown type " + new GType (type).ToString ());
+			
+			return ci.Invoke (new object[] {this});
+		}
+
+		void FromRegisteredType (object val) {
+			Type t = GLib.GType.LookupType (type);
+			MethodInfo mi = null;
+			
+			try {
+				while (mi == null && t != null) {
+					mi = t.GetMethod ("SetGValue", new Type[] { Type.GetType ("GLib.Value&") });
+					if (mi != null && (mi.IsAbstract || mi.ReturnType != typeof (void)))
+						mi = null;
+					if (mi == null)
+						t = t.BaseType;
+				}
+			} catch (Exception) {
+				mi = null;
+			}
+			
+			if (mi == null)
+				throw new Exception ("Unknown type " + new GType (type).ToString ());
+			
+			object[] parameters = new object[] { this };
+			mi.Invoke (val, parameters);
+			this = (GLib.Value) parameters[0];
+		}
+
+		long GetLongForPlatform ()
+		{
+			switch (Environment.OSVersion.Platform) {
+			case PlatformID.Win32NT:
+			case PlatformID.Win32S:
+			case PlatformID.Win32Windows:
+			case PlatformID.WinCE:
+				return (long) g_value_get_long_as_int (ref this);
+			default:
+				return g_value_get_long (ref this).ToInt64 ();
+			}
+		}
+
+		ulong GetULongForPlatform ()
+		{
+			switch (Environment.OSVersion.Platform) {
+			case PlatformID.Win32NT:
+			case PlatformID.Win32S:
+			case PlatformID.Win32Windows:
+			case PlatformID.WinCE:
+				return (ulong) g_value_get_ulong_as_uint (ref this);
+			default:
+				return g_value_get_ulong (ref this).ToUInt64 ();
+			}
+		}
+
+		void SetLongForPlatform (long val)
+		{
+			switch (Environment.OSVersion.Platform) {
+			case PlatformID.Win32NT:
+			case PlatformID.Win32S:
+			case PlatformID.Win32Windows:
+			case PlatformID.WinCE:
+				g_value_set_long (ref this, (int) val);
+				break;
+			default:
+				g_value_set_long (ref this, new IntPtr (val));
+				break;
+			}
+		}
+
+		void SetULongForPlatform (ulong val)
+		{
+			switch (Environment.OSVersion.Platform) {
+			case PlatformID.Win32NT:
+			case PlatformID.Win32S:
+			case PlatformID.Win32Windows:
+			case PlatformID.WinCE:
+				g_value_set_ulong (ref this, (uint) val);
+				break;
+			default:
+				g_value_set_ulong (ref this, new UIntPtr (val));
+				break;
+			}
+		}
+
+		object ToEnum ()
+		{
+			Type t = GType.LookupType (type);
+			
+			if (t == null) {
+				if (HoldsFlags)
+					return g_value_get_flags (ref this);
+				else
+					return g_value_get_enum (ref this);
+			} else {
+				return (Enum) this;
+			}
+		}
+
 		object ToBoxed ()
 		{
 			IntPtr boxed_ptr = g_value_get_boxed (ref this);
+
+			if (boxed_ptr == IntPtr.Zero)
+				return null;
+
 			Type t = GType.LookupType (type);
 			if (t == null)
 				throw new Exception ("Unknown type " + new GType (type).ToString ());
 			else if (t.IsSubclassOf (typeof (GLib.Opaque)))
 				return (GLib.Opaque) this;
 
-			MethodInfo mi = t.GetMethod ("New", BindingFlags.Static | BindingFlags.Public | BindingFlags.FlattenHierarchy);
-			if (mi == null)
-				return Marshal.PtrToStructure (boxed_ptr, t);
-			else
+			MethodInfo mi = t.GetMethod ("New", BindingFlags.Static | BindingFlags.Public | BindingFlags.FlattenHierarchy, null, new Type[] { typeof(IntPtr) }, null);
+			if (mi != null)
 				return mi.Invoke (null, new object[] {boxed_ptr});
+
+			ConstructorInfo ci = t.GetConstructor (new Type[] { typeof(IntPtr), typeof (bool) });
+			if (ci != null)
+				return ci.Invoke (new object[] { boxed_ptr, false });
+
+			ci = t.GetConstructor (new Type[] { typeof(IntPtr) });
+			if (ci != null)
+				return ci.Invoke (new object[] { boxed_ptr });
+
+			return Marshal.PtrToStructure (boxed_ptr, t);
 		}
 
 		public object Val
@@ -359,11 +463,15 @@ namespace GLib {
 					return (uint) this;
 				else if (type == GType.Int64.Val)
 					return (long) this;
+				else if (type == GType.Long.Val)
+					return GetLongForPlatform ();
 				else if (type == GType.UInt64.Val)
 					return (ulong) this;
-				else if (g_type_is_a (type, GType.Enum.Val) ||
-					 g_type_is_a (type, GType.Flags.Val))
-					return (Enum) this;
+				else if (type == GType.ULong.Val)
+					return GetULongForPlatform ();
+				else if (GType.Is (type, GType.Enum) ||
+					 GType.Is (type, GType.Flags))
+					return ToEnum ();
 				else if (type == GType.Float.Val)
 					return (float) this;
 				else if (type == GType.Double.Val)
@@ -372,14 +480,20 @@ namespace GLib {
 					return (string) this;
 				else if (type == GType.Pointer.Val)
 					return (IntPtr) this;
+				else if (type == GType.Variant.Val)
+					return (GLib.Variant) this;
 				else if (type == GType.Param.Val)
 					return g_value_get_param (ref this);
+				else if (type == ValueArray.GType.Val)
+					return new ValueArray (g_value_get_boxed (ref this));
 				else if (type == ManagedValue.GType.Val)
 					return ManagedValue.ObjectForWrapper (g_value_get_boxed (ref this));
-				else if (g_type_is_a (type, GType.Object.Val))
+				else if (GType.Is (type, GType.Object))
 					return (GLib.Object) this;
-				else if (g_type_is_a (type, GType.Boxed.Val))
+				else if (GType.Is (type, GType.Boxed))
 					return ToBoxed ();
+				else if (GType.LookupType (type) != null)
+					return ToRegisteredType ();
 				else if (type == IntPtr.Zero)
 					return null;
 				else
@@ -398,16 +512,22 @@ namespace GLib {
 					g_value_set_uint (ref this, (uint) value);
 				else if (type == GType.Int64.Val)
 					g_value_set_int64 (ref this, (long) value);
+				else if (type == GType.Long.Val)
+					SetLongForPlatform ((long) value);
 				else if (type == GType.UInt64.Val)
 					g_value_set_uint64 (ref this, (ulong) value);
-				else if (g_type_is_a (type, GType.Enum.Val))
+				else if (type == GType.ULong.Val)
+					SetULongForPlatform (Convert.ToUInt64 (value));
+				else if (GType.Is (type, GType.Enum))
 					g_value_set_enum (ref this, (int)value);
-				else if (g_type_is_a (type, GType.Flags.Val))
+				else if (GType.Is (type, GType.Flags))
 					g_value_set_flags (ref this, (uint)(int)value);
 				else if (type == GType.Float.Val)
 					g_value_set_float (ref this, (float) value);
 				else if (type == GType.Double.Val)
 					g_value_set_double (ref this, (double) value);
+				else if (type == GType.Variant.Val)
+					g_value_set_variant (ref this, ((GLib.Variant) value).Handle);
 				else if (type == GType.String.Val) {
 					IntPtr native = GLib.Marshaller.StringToPtrGStrdup ((string)value);
 					g_value_set_string (ref this, native);
@@ -425,16 +545,18 @@ namespace GLib {
 					g_value_set_pointer (ref this, buf);
 				} else if (type == GType.Param.Val) {
 					g_value_set_param (ref this, (IntPtr) value);
+				} else if (type == ValueArray.GType.Val) {
+					g_value_set_boxed (ref this, ((ValueArray) value).Handle);
 				} else if (type == ManagedValue.GType.Val) {
 					IntPtr wrapper = ManagedValue.WrapObject (value);
 					g_value_set_boxed (ref this, wrapper);
 					ManagedValue.ReleaseWrapper (wrapper);
-				} else if (g_type_is_a (type, GType.Object.Val))
+				} else if (GType.Is (type, GType.Object))
 					if(value is GLib.Object)
 						g_value_set_object (ref this, (value as GLib.Object).Handle);
 					else
-						g_value_set_object (ref this, (value as GLib.GInterfaceAdapter).Handle);
-				else if (g_type_is_a (type, GType.Boxed.Val)) {
+						g_value_set_object (ref this, ((GInterfaceAdapter)value).Handle);
+				else if (GType.Is (type, GType.Boxed)) {
 					if (value is IWrapper) {
 						g_value_set_boxed (ref this, ((IWrapper)value).Handle);
 						return;
@@ -442,6 +564,8 @@ namespace GLib {
 					IntPtr buf = Marshaller.StructureToPtrAlloc (value);
 					g_value_set_boxed (ref this, buf);
 					Marshal.FreeHGlobal (buf);
+				} else if (GLib.GType.LookupType (type) != null) {
+					FromRegisteredType (value);
 				} else
 					throw new Exception ("Unknown type " + new GType (type).ToString ());
 			}
@@ -449,125 +573,182 @@ namespace GLib {
 
 		internal void Update (object val)
 		{
-			if (g_type_is_a (type, GType.Boxed.Val) && !(val is IWrapper))
-				Marshal.StructureToPtr (val, g_value_get_boxed (ref this), false);
+			if (GType.Is (type, GType.Boxed) && val != null && !(val is IWrapper)) {
+				MethodInfo mi = val.GetType ().GetMethod ("Update", BindingFlags.NonPublic | BindingFlags.Instance);
+				IntPtr boxed_ptr = g_value_get_boxed (ref this);
+
+				if (mi == null && !val.GetType ().IsDefined (typeof(StructLayoutAttribute), false))
+					return;
+
+				if (mi == null)
+					Marshal.StructureToPtr (val, boxed_ptr, false);
+				else
+					mi.Invoke (val, null);
+			}
 		}
 
-		[DllImport("libgobject-2.0-0.dll")]
+		bool HoldsFlags {
+			get { return g_type_check_value_holds (ref this, GType.Flags.Val); }
+		}
+
+		void InitForProperty (Object obj, string name)
+		{
+			GType gtype = obj.NativeType;
+			InitForProperty (gtype, name);
+		}
+
+		void InitForProperty (GType gtype, string name)
+		{
+			IntPtr p_name = Marshaller.StringToPtrGStrdup (name);
+			IntPtr spec_ptr = g_object_class_find_property (gtype.GetClassPtr (), p_name);
+			Marshaller.Free (p_name);
+
+			if (spec_ptr == IntPtr.Zero)
+				throw new Exception (String.Format ("No property with name '{0}' in type '{1}'", name, gtype.ToString()));
+			
+			ParamSpec spec = new ParamSpec (spec_ptr);
+			g_value_init (ref this, spec.ValueType.Val);
+		}
+
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
+		static extern IntPtr g_object_class_find_property (IntPtr klass, IntPtr name);
+
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
+		static extern bool g_type_check_value_holds (ref Value val, IntPtr gtype);
+
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void g_value_init (ref GLib.Value val, IntPtr gtype);
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void g_value_unset (ref GLib.Value val);
 
-		[DllImport("glibsharpglue-2")]
-		static extern IntPtr gtksharp_value_create_from_property(ref GLib.Value val, IntPtr obj, IntPtr name);
-
-		[DllImport("glibsharpglue-2")]
-		static extern IntPtr gtksharp_value_create_from_type_and_property(ref GLib.Value val, IntPtr gtype, IntPtr name);
-
-		[DllImport("glibsharpglue-2")]
-		static extern IntPtr gtksharp_value_create_from_type_name(ref GLib.Value val, IntPtr type_name);
-
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void g_value_set_boolean (ref Value val, bool data);
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void g_value_set_uchar (ref Value val, byte data);
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void g_value_set_char (ref Value val, sbyte data);
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void g_value_set_boxed (ref Value val, IntPtr data);
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void g_value_set_double (ref Value val, double data);
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void g_value_set_float (ref Value val, float data);
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void g_value_set_int (ref Value val, int data);
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void g_value_set_int64 (ref Value val, long data);
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
+		static extern void g_value_set_long (ref Value val, IntPtr data);
+
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
+		static extern void g_value_set_long (ref Value val, int data);
+
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void g_value_set_uint64 (ref Value val, ulong data);
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void g_value_set_object (ref Value val, IntPtr data);
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void g_value_set_param (ref Value val, IntPtr data);
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void g_value_set_pointer (ref Value val, IntPtr data);
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void g_value_set_string (ref Value val, IntPtr data);
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void g_value_set_uint (ref Value val, uint data);
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
+		static extern void g_value_set_ulong (ref Value val, UIntPtr data);
+
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
+		static extern void g_value_set_ulong (ref Value val, uint data);
+
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void g_value_set_enum (ref Value val, int data);
-		[DllImport("libgobject-2.0-0.dll")]
+
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern void g_value_set_flags (ref Value val, uint data);
+
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
+		static extern void g_value_set_variant (ref Value val, IntPtr data);
 		
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern bool g_value_get_boolean (ref Value val);
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern byte g_value_get_uchar (ref Value val);
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern sbyte g_value_get_char (ref Value val);
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern IntPtr g_value_get_boxed (ref Value val);
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern double g_value_get_double (ref Value val);
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern float g_value_get_float (ref Value val);
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern int g_value_get_int (ref Value val);
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern long g_value_get_int64 (ref Value val);
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
+		static extern IntPtr g_value_get_long (ref Value val);
+
+		[DllImport (Global.GObjectNativeDll, EntryPoint = "g_value_get_long", CallingConvention = CallingConvention.Cdecl)]
+		static extern int g_value_get_long_as_int (ref Value val);
+
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern ulong g_value_get_uint64 (ref Value val);
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
+		static extern UIntPtr g_value_get_ulong (ref Value val);
+
+		[DllImport (Global.GObjectNativeDll, EntryPoint = "g_value_get_ulong", CallingConvention = CallingConvention.Cdecl)]
+		static extern int g_value_get_ulong_as_uint (ref Value val);
+
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern IntPtr g_value_get_object (ref Value val);
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern IntPtr g_value_get_param (ref Value val);
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern IntPtr g_value_get_pointer (ref Value val);
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern IntPtr g_value_get_string (ref Value val);
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern uint g_value_get_uint (ref Value val);
 
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern int g_value_get_enum (ref Value val);
-		[DllImport("libgobject-2.0-0.dll")]
+
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern uint g_value_get_flags (ref Value val);
-		[DllImport("glibsharpglue-2")]
-		static extern bool glibsharp_value_holds_flags (ref Value val);
 
-		[DllImport("libgobject-2.0-0.dll")]
-		static extern bool g_type_is_a (IntPtr type, IntPtr is_a_type);
-
-		[DllImport("libgobject-2.0-0.dll")]
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
 		static extern IntPtr g_strv_get_type ();
+
+		[DllImport (Global.GObjectNativeDll, CallingConvention = CallingConvention.Cdecl)]
+		static extern IntPtr g_value_get_variant (ref Value val);
 	}
 }

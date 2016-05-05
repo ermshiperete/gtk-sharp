@@ -25,7 +25,7 @@ namespace GtkSharp.Generation {
 	using System.IO;
 	using System.Xml;
 
-	public abstract class HandleBase : ClassBase, IAccessor {
+	public abstract class HandleBase : ClassBase, IAccessor, IOwnable {
 
 		protected HandleBase (XmlElement ns, XmlElement elem) : base (ns, elem) {}
 					
@@ -56,16 +56,6 @@ namespace GtkSharp.Generation {
 		public override string FromNative (string var)
 		{
 			return FromNative (var, false);
-		}
-
-		public string FromNativeReturn (string var, bool owned)
-		{
-			return FromNative (var, owned);
-		}
-
-		public override string FromNativeReturn (string var)
-		{
-			return FromNativeReturn (var, false);
 		}
 
 		public void WriteAccessors (StreamWriter sw, string indent, string var)
