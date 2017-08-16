@@ -39,6 +39,8 @@ namespace GLib {
 			gch = GCHandle.Alloc (this);
 			reference = target;
 			g_object_add_toggle_ref (target.Handle, ToggleNotifyCallback, (IntPtr) gch);
+			if (target.owned && !(target is InitiallyUnowned))
+				g_object_unref (target.Handle);
 		}
 
 		public IntPtr Handle {
@@ -67,12 +69,23 @@ namespace GLib {
 			}
 		}
 
+		internal void RemoveSignal (string name)
+		{
+			if (signals == null)
+				return;
+			
+			signals.Remove (name);
+		}
+
   		public void Free ()
   		{
-			Signal[] signals = new Signal [Signals.Count];
-			Signals.Values.CopyTo (signals, 0);
-			foreach (Signal s in signals)
-				s.Free ();
+			if (signals != null) {
+				var copy = signals.Values;
+				signals = null;
+				foreach (Signal s in copy)
+					s.Free ();
+			}
+
 			if (hardened)
 				g_object_unref (handle);
 			else
